@@ -1,21 +1,22 @@
-import { type Router, type RouteRecordRaw } from 'vue-router'
+import { type Router, type RouteRecordRaw } from "vue-router";
 
-import home from './home'
-
+import home from "./home";
+import security from "./security";
 
 export interface ModuleOptions {
-  router?: Router
+  router?: Router;
 }
 
 interface BModule {
-  name: string
-  routes?: RouteRecordRaw[]
+  name: string;
+  routes?: RouteRecordRaw[];
 }
 
 export function registryModule (module: BModule, { router }: ModuleOptions): void {
-  module.routes?.forEach(it => router?.addRoute(it))
+  module.routes?.forEach(it => router?.addRoute(it));
 }
 
 export {
-  home
-}
+  home,
+  security
+};
