@@ -18,7 +18,7 @@ const standard = {
   rules: {
     ...standardConfig.rules,
     "no-undef": "error",
-    "no-console": process.env.NODE_ENV === "production" ? "error" : "warn",
+    "no-console": process.env.NODE_ENV === "production" ? "error" : "off",
     "no-debugger": process.env.NODE_ENV === "production" ? "error" : "off"
   },
   languageOptions: {
@@ -105,6 +105,7 @@ export default [{
         baseIndent: 1,
         switchCase: 1
       }],
+      "no-console": "off",
       "vue/multi-word-component-names": "off",
       "vue/first-attribute-linebreak": ["error", {
         singleline: "ignore",

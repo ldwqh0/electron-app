@@ -7,7 +7,7 @@ import router from "@/router";
 import { home, registryModule, security } from "@/modules";
 import { httpPlugin } from "@/http";
 import "element-plus/dist/index.css";
-import { HttpInstance } from "@/http/http";
+import axiosHttp from "@/http/http";
 
 const app = createApp(App);
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
@@ -18,6 +18,6 @@ registryModule(home, { router });
 registryModule(security, { router });
 
 app.use(router)
-  .use(httpPlugin, HttpInstance.create(env.AJAX_ROOT))
+  .use(httpPlugin, axiosHttp)
   .use(createPinia())
   .mount("#app");

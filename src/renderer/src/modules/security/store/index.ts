@@ -2,7 +2,7 @@ import type { TenantDto } from "@/types/service";
 import { defineStore } from "pinia";
 import qs from "qs";
 import { computed, reactive } from "vue";
-import { HttpInstance } from "@/http/http";
+import http from "@/http";
 
 const useSecurityStore = defineStore("security", () => {
   const state = reactive({
@@ -11,7 +11,6 @@ const useSecurityStore = defineStore("security", () => {
   state.token = sessionStorage.getItem("token-m") ?? "";
 
   async function login (payload: unknown): Promise<void> {
-    const http = HttpInstance.create(env.AJAX_ROOT);
     const { headers } = await http.post<TenantDto[]>("login", qs.stringify(payload));
     const token = headers["x-auth-token"];
     state.token = token;

@@ -2,7 +2,6 @@ import { app, BrowserWindow, ipcMain, shell } from "electron";
 import { join } from "path";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 import icon from "../../resources/icon.png?asset";
-import requestEventHandler from "./requestEventHandler";
 
 function createWindow () {
   // Create the browser window.
@@ -35,6 +34,32 @@ function createWindow () {
     mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
   }
 
+  // 跨域问题仅在测试环境中出现，因为生产环境是使用loadFile加载的窗口，所以不需要设置跨域问题
+  if (process.env.NODE_ENV === "development") {
+    mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+      if (details.method === "OPTIONS") {
+        callback({
+          ...details,
+          statusLine: "HTTP/1.1 204",
+          responseHeaders: {
+            ...details.responseHeaders,
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "x-auth-token",
+            "Access-Control-Allow-Methods": "POST, GET, PUT, DELETE, PATCH"
+          }
+        });
+      } else {
+        callback({
+          ...details,
+          responseHeaders: {
+            ...details.responseHeaders,
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Expose-Headers": "x-auth-token"
+          }
+        });
+      }
+    });
+  }
 }
 
 // This method will be called when Electron has finished
@@ -53,8 +78,6 @@ app.whenReady().then(() => {
   createWindow();
   // IPC test
   ipcMain.on("ping", () => console.log("pong"));
-
-  ipcMain.on("request", requestEventHandler);
 
   app.on("activate", function() {
     // On macOS it's common to re-create a window in the app when the

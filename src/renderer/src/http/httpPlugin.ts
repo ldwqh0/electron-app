@@ -1,8 +1,8 @@
 import type { App, Plugin } from "vue";
-import type { HttpInstance } from "./http";
+import { AxiosInstance } from "axios";
 
 export default {
-  install (app: App, instance: HttpInstance): void {
+  install (app: App, instance: AxiosInstance): void {
     app.provide("http", instance);
   }
-} satisfies Plugin<HttpInstance>;
+} satisfies Plugin<AxiosInstance>;
