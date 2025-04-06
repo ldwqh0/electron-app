@@ -13,7 +13,8 @@
   <slot v-if="props.showProgress" :items="tasks" name="list">
     <div v-for="t in tasks" :key="t.id" class="task-list">
       <div class="task-item">
-        {{ t.file.name }} - {{ t.progress }}
+        {{ t.file.name }} - {{ t.progress }}% - {{ t.hashProgress / t.file.size * 100 }}%
+        <a href="javascript:void(0)" @click="t.cancel('手动取消')">取消</a>
       </div>
     </div>
   </slot>

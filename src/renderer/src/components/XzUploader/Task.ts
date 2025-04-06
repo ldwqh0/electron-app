@@ -1,6 +1,6 @@
 import { v1 as uuid } from "uuid";
 import type { AxiosInstance, AxiosProgressEvent, AxiosResponse } from "axios";
-import { md5, sha256 } from "./FileCrypto";
+import { FileCryptor } from "./FileCrypto";
 import type { FileInfo } from "./types";
 
 export enum Status {
@@ -42,12 +42,11 @@ export class Task<T = any, D = any> { // 请求的响应
   state: Status = Status.new;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   response?: AxiosResponse<T, D>;
-
   aborter?: AbortController;
-
   chunkProgress = 0;
-
   fileInfo?: FileInfo;
+  private md5Cryptor?: FileCryptor;
+  private sha256Cryptor?: FileCryptor;
 
   constructor ({
     file,
@@ -101,10 +100,16 @@ export class Task<T = any, D = any> { // 请求的响应
     return this.error !== undefined && this.error !== null;
   }
 
+  get hashProgress (): number {
+    return ((this.sha256Cryptor?.progress ?? 0) + (this.md5Cryptor?.progress ?? 0)) / 2;
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async run (): Promise<any> {
     try {
-      const [sha256Value, md5Value] = await Promise.all([sha256(this.file), md5(this.file)]);
+      this.sha256Cryptor = new FileCryptor();
+      this.md5Cryptor = new FileCryptor();
+      const [sha256Value, md5Value] = await Promise.all([this.sha256Cryptor.sha256(this.file), this.md5Cryptor.md5(this.file)]);
       const { data }: AxiosResponse<FileInfo> = await this.http.post<FileInfo>(`${this.url}`, {
         filename: this.file.name,
         sha256: sha256Value,
@@ -121,12 +126,14 @@ export class Task<T = any, D = any> { // 请求的响应
     } finally {
       this.state = Status.dead;
     }
-
   }
 
   cancel (reason: string = ""): void {
-    this.aborter!.abort(reason);
+    this.aborter?.abort(reason);
+    this.md5Cryptor?.stop();
+    this.sha256Cryptor?.stop();
     this.onCancel(reason);
+    debugger
     this.state = Status.blocked;
   }
 

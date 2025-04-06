@@ -6,6 +6,12 @@ export interface FileInfo {
   md5?: string;
   progress?: string;
   completed?: boolean;
-  chunkSize?: number
+  chunkSize?: number;
+}
+
+export interface Progress {
+  completed: boolean,
+  result?: string,
+  progress?: number
 }
 

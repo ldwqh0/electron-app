@@ -15,8 +15,12 @@ function continueHash (file, hasher, start, resolve) {
       continueHash(file, hasher, end, resolve)
     })
   } else {
-    // eslint-disable-next-line no-undef
-    resolve(hasher.finalize().toString(CryptoJS.enc.Hex))
+    resolve({
+      completed: true,
+      progress: end,
+      // eslint-disable-next-line no-undef
+      result: hasher.finalize().toString(CryptoJS.enc.Hex)
+    })
   }
 }
 
@@ -37,9 +41,6 @@ self.addEventListener('message', event => {
   new Promise((resolve, reject) => {
     continueHash(event.data.file, hasher, 0, resolve, event.data.alog)
   }).then((v) => {
-    self.postMessage({
-      completed: true,
-      result: v
-    })
+    self.postMessage(v)
   })
 })

@@ -13,11 +13,23 @@ asarUnpack:
   - resources/**
 win:
   executableName: electron-app
+  target:
+    - nsis
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+  allowToChangeInstallationDirectory: true
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  createStartMenuShortcut: true
+  runAfterFinish: false
+  deleteAppDataOnUninstall: true
+msi:
+  artifactName: ${name}-${version}-setup.${ext}
+  oneClick: false
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
