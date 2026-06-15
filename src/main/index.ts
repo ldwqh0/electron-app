@@ -1,8 +1,10 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import * as fs from 'fs'
+import { closeDatabase, configureDatabase } from './database'
+import SyncTaskService from './service/SyncTaskService'
+import { registerServiceAsIpc } from './ServiceIpcRegistry'
 
 function createWindow () {
   // Create the browser window.
@@ -77,19 +79,15 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
   createWindow()
-  // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
 
-  // 文件写入 IPC 处理
-  ipcMain.handle('write-to-file', async (_, content: string) => {
-    try {
-      const filePath = 'd:\\a.txt'
-      fs.writeFileSync(filePath, content, 'utf-8')
-      return { success: true, message: `文件写入成功: ${filePath}` }
-    } catch (error) {
-      return { success: false, message: `文件写入失败: ${error.message}` }
-    }
-  })
+  // 配置数据库（WAL 模式等）
+  configureDatabase()
+
+  // 自动注册 SyncTaskService 的所有方法为 IPC 处理器
+  // 会注册: sync-task:save, sync-task:update, sync-task:findById,
+  //        sync-task:findAll, sync-task:remove, sync-task:saveBatch,
+  //        sync-task:clearAll, sync-task:closeDatabase
+  registerServiceAsIpc(SyncTaskService, 'sync-task')
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
@@ -105,6 +103,13 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+// 应用退出前关闭数据库连接
+app.on('will-quit', () => {
+  console.log('🔌 Closing database connection...')
+  closeDatabase()
+  console.log('✅ Database connection closed')
 })
 
 // In this file you can include the rest of your app's specific main process
