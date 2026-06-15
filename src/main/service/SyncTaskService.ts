@@ -1,5 +1,9 @@
 import { db } from '../database'
-import type { SyncTask } from '../model/SyncTask'
+import type { RangePagedModel, SyncTask } from '../../types'
+import { isEmpty } from 'lodash-es'
+import type { SQLOutputValue } from 'node:sqlite'
+import { PageableParam } from '../../types/PageableParam'
+import cleanObj from '../../lib/cleanObj'
 
 // 初始化数据库表（在模块加载时执行）
 
@@ -21,8 +25,8 @@ function initializeDatabase (): void {
 
 // 预编译 SQL 语句
 const insertStmt = db.prepare(`
-  INSERT INTO sync_tasks (dataName, startTime, completedTime, exception, successCount, failCount, ready)
-  VALUES (@dataName, @startTime, @completedTime, @exception, @successCount, @failCount, @ready)
+  INSERT INTO sync_tasks (dataName, startTime, ready)
+  VALUES (@dataName, @startTime, @ready)
 `)
 
 const updateStmt = db.prepare(`
@@ -38,7 +42,6 @@ const updateStmt = db.prepare(`
 `)
 
 const selectStmt = db.prepare('SELECT * FROM sync_tasks WHERE id = ?')
-const selectAllStmt = db.prepare('SELECT * FROM sync_tasks ORDER BY id DESC')
 const deleteStmt = db.prepare('DELETE FROM sync_tasks WHERE id = ?')
 
 /**
@@ -59,16 +62,16 @@ function toDbFormat (data: SyncTask) {
 /**
  * 将数据库记录转换为 SyncTask 格式
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function fromDbFormat (row: any): SyncTask {
+
+function fromDbFormat (row: Record<string, SQLOutputValue>): SyncTask {
   return {
-    id: row.id,
-    dataName: row.dataName,
-    startTime: row.startTime,
-    completedTime: row.completedTime,
-    exception: row.exception,
-    successCount: row.successCount,
-    failCount: row.failCount,
+    id: row.id as number,
+    dataName: row.dataName as string,
+    startTime: row.startTime as unknown as Date,
+    completedTime: row.completedTime as unknown as Date | null,
+    exception: row.exception as string | null,
+    successCount: row.successCount as number,
+    failCount: row.failCount as number,
     ready: row.ready === 1,
     datas: []
   }
@@ -80,7 +83,11 @@ function fromDbFormat (row: any): SyncTask {
  * @returns 保存后的数据（包含数据库生成的 id）
  */
 async function save (data: SyncTask): Promise<SyncTask> {
-  const result = insertStmt.run(toDbFormat(data))
+  const result = insertStmt.run({
+    dataName: data.dataName ?? '',
+    startTime: data.startTime,
+    ready: data.ready ? 1 : 0
+  })
   return {
     ...data,
     id: Number(result.lastInsertRowid)
@@ -118,12 +125,39 @@ async function findById (id: number | string): Promise<SyncTask | null> {
 }
 
 /**
- * 查询所有同步任务
- * @returns 同步任务列表
+ * 查询所有同步任务（支持分页）
+ * @param params 分页参数
+ * @returns 分页数据
  */
-async function findAll (): Promise<SyncTask[]> {
-  const rows = selectAllStmt.all()
-  return rows.map(fromDbFormat)
+export async function findAll (params: PageableParam): Promise<RangePagedModel<SyncTask, number>> {
+  const { page = 0, size = 10, keyword } = params
+  const queryParams = cleanObj(params)
+  const countSql = 'SELECT COUNT(*) as count FROM sync_tasks WHERE 1=1 '
+  const selectSql = 'SELECT * FROM sync_tasks WHERE 1=1 '
+  // 计算偏移量
+  let where = ''
+
+  if (!isEmpty(keyword)) {
+    where = ' AND dataName LIKE @keyword'
+  }
+
+  // 查询总数
+  const countResult = db.prepare(`${countSql}${where}`).get(queryParams) as { count: number }
+  // 查询分页数据
+  const selectStmt = db.prepare(`${selectSql}${where} ORDER BY id DESC LIMIT @limit OFFSET @offset`)
+  const content = selectStmt.all({
+    ...queryParams,
+    limit: size,
+    offset: page * size
+  }).map(fromDbFormat)
+  return {
+    content,
+    page: {
+      page,
+      size,
+      totalElements: countResult.count
+    }
+  }
 }
 
 /**

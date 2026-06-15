@@ -8,20 +8,28 @@ import { ipcMain } from 'electron'
 /**
  * 创建成功的 IPC 响应
  */
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function successResponse<T = any> (data: T) {
-  return { success: true, data }
+  return {
+    status: 200,
+    data
+  }
 }
 
 /**
  * 错误处理包装器
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function withErrorHandler (handler: (...args: any[]) => Promise<any>) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return async (...args: any[]) => {
     try {
       return await handler(...args)
     } catch (error) {
       return {
         success: false,
+        status: 500,
         message: error instanceof Error ? error.message : String(error)
       }
     }
@@ -48,7 +56,7 @@ export function registerServiceAsIpc (
     if (typeof fn !== 'function') return
     if (name === 'default') return
 
-    const channel = `${prefix}:${name}`
+    const channel = `${prefix}/${name}`
     // 创建 IPC 处理器
     const handler = withErrorHandler(async (_, ...args) => {
       const result = await fn(...args)

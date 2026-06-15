@@ -2,7 +2,7 @@ import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { closeDatabase, configureDatabase } from './database'
+import { closeDatabase } from './database'
 import SyncTaskService from './service/SyncTaskService'
 import { registerServiceAsIpc } from './ServiceIpcRegistry'
 
@@ -12,7 +12,7 @@ function createWindow () {
     width: 900,
     height: 670,
     show: false,
-    autoHideMenuBar: true,
+    autoHideMenuBar: false,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -81,12 +81,12 @@ app.whenReady().then(() => {
   createWindow()
 
   // 配置数据库（WAL 模式等）
-  configureDatabase()
 
   // 自动注册 SyncTaskService 的所有方法为 IPC 处理器
   // 会注册: sync-task:save, sync-task:update, sync-task:findById,
   //        sync-task:findAll, sync-task:remove, sync-task:saveBatch,
   //        sync-task:clearAll, sync-task:closeDatabase
+
   registerServiceAsIpc(SyncTaskService, 'sync-task')
 
   app.on('activate', function () {
@@ -107,9 +107,7 @@ app.on('window-all-closed', () => {
 
 // 应用退出前关闭数据库连接
 app.on('will-quit', () => {
-  console.log('🔌 Closing database connection...')
   closeDatabase()
-  console.log('✅ Database connection closed')
 })
 
 // In this file you can include the rest of your app's specific main process

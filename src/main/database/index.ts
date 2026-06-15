@@ -21,7 +21,7 @@ export const db = new DatabaseSync(dbPath)
 /**
  * 配置数据库选项
  */
-export function configureDatabase (): void {
+function configureDatabase (): void {
   // 设置 WAL 模式以提高性能和可靠性
   db.exec('PRAGMA journal_mode = WAL')
 
@@ -95,10 +95,11 @@ export function getDatabaseStats (): {
   }
 }
 
+configureDatabase()
+
 // 导出默认对象
 export default {
   db,
-  configureDatabase,
   closeDatabase,
   isDatabaseOpen,
   getDatabasePath,

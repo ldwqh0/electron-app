@@ -1,89 +1,109 @@
 <template>
-  <div>欢迎进入首页模块</div>
-  <div>{{ state.current }}</div>
-  <el-button @click="writeFile()">测试</el-button>
-  <el-button @click="saveTask()">新增一个task</el-button>
-  <el-button @click="loadTasks()">查看所有task</el-button>
+  <div class="home-container">
+    <el-form style="display: flex;justify-content: space-between;">
+      <div style="display: flex; gap: 8px;">
+        <el-form-item label="">
+          <el-input v-model="state.serverParams.keyword"
+                    clearable
+                    placeholder="请输入任务名称搜索"
+                    @clear="handleSearch"
+                    @keyup.enter="handleSearch" />
+        </el-form-item>
+        <el-button type="primary" @click="handleSearch">搜索</el-button>
+      </div>
+      <div>
+        <el-form-item label="">
+          <el-button type="primary" @click="newTask()">新任务</el-button>
+        </el-form-item>
+      </div>
+    </el-form>
+    <ele-datatables ref="dataTable"
+                    :http="http"
+                    :server-params="state.serverParams"
+                    ajax="sync-task/findAll"
+                    class="table-container">
+      <el-table-column label="ID" prop="id" />
+      <el-table-column label="NAME" prop="dataName" />
+      <el-table-column label="START TIME" prop="startTime" />
+      <el-table-column label="COMPLETED TIME" prop="completedTime" />
+      <el-table-column label="EXCEPTION" prop="exception" />
+      <el-table-column label="SUCCESS COUNT" prop="successCount" />
+      <el-table-column label="FAIL COUNT" prop="failCount" />
+      <el-table-column label="READY" prop="ready" />
+    </ele-datatables>
+    <el-dialog v-model="state.taskDialogVisible" title="新任务" @closed="state.current=null">
+      <el-form v-if="state.current" :model="state.current" label-width="100">
+        <el-form-item label="任务名称" prop="dataName">
+          <el-input v-model="state.current.dataName" />
+        </el-form-item>
+        <el-form-item label="任务开始日期" prop="startTime">
+          <el-date-picker v-model="state.current.startTime" value-format="YYYY-MM-DD" />
+        </el-form-item>
+        <el-form-item label="备注" prop="note">
+          <el-input type="textarea" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="state.taskDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveTask">确定</el-button>
+      </template>
+    </el-dialog>
+  </div>
 </template>
 
 <script lang="ts" setup>
   /* eslint-disable @typescript-eslint/no-explicit-any */
-  import { useHttp } from '@/http'
-  import { reactive } from 'vue'
+  import { reactive, ref, toRaw } from 'vue'
+  import { EleDatatables } from '@/components'
+  import { SyncTask } from '../../../../../types'
+  import { ElMessage } from 'element-plus'
 
-  const http = useHttp()
-  const state = reactive({
-    current: {}
+  const state = reactive<{
+    serverParams: {
+      keyword?: string
+    },
+    current: SyncTask | null
+    taskDialogVisible: boolean
+  }>({
+    serverParams: {
+      keyword: ''
+    },
+    taskDialogVisible: false,
+    current: null
   })
+  const http = window.api
+  const dataTable = ref<InstanceType<typeof EleDatatables> | null>(null)
 
-  http.get('authorities/current').then((res) => {
-    state.current = res.data
-  }).catch(() => {
-    // console.log(err)
-  })
-
-  function writeFile () {
-    // 调用 Electron 主进程写入文件
-    window.api.writeFile('这是一段测试文本，由 Electron 客户端写入。\n写入时间：' + new Date().toLocaleString())
-      .then((result: any) => {
-        console.log(result)
-        if (result.success) {
-          alert(result.message)
-        } else {
-          alert('写入失败: ' + result.message)
-        }
-      })
-      .catch((error: any) => {
-        console.error('写入文件异常:', error)
-        alert('写入文件异常: ' + error.message)
-      })
+  // 搜索处理
+  function handleSearch () {
+    dataTable.value?.reloadData()
   }
 
-  async function saveTask () {
-    // 调用ipc saveTask
-    try {
-      const result = await window.api.syncTask.save({
-        dataName: '测试任务 ' + new Date().toLocaleTimeString(),
-        startTime: new Date(),
-        completedTime: null,
-        exception: null,
-        successCount: 0,
-        failCount: 0,
-        ready: true
-      })
-
-      if (result.success) {
-        console.log('任务保存成功，ID:', result.data?.id)
-        alert('任务保存成功！ID: ' + result.data?.id)
-      } else {
-        console.error('任务保存失败:', result.message)
-        alert('任务保存失败: ' + result.message)
-      }
-    } catch (error: any) {
-      console.error('保存任务异常:', error)
-      alert('保存任务异常: ' + error.message)
+  async function newTask () {
+    state.taskDialogVisible = true
+    state.current = {
+      dataName: '凭证同步任务'
     }
   }
 
-  async function loadTasks () {
-    // 调用ipc查询所有任务
+  async function saveTask () {
     try {
-      const result = await window.api.syncTask.findAll()
-
-      if (result.success) {
-        console.log('所有任务:', result.data)
-        alert(`查询成功！共 ${result.data?.length || 0} 个任务，详见控制台`)
-      } else {
-        console.error('查询失败:', result.message)
-        alert('查询失败: ' + result.message)
+      const result = await window.api.post('sync-task/save', toRaw(state.current))
+      if (result.status === 200) {
+        ElMessage.success({ message: '任务保存成功！' })
+        dataTable.value?.reloadData()
+        state.taskDialogVisible = false
       }
     } catch (error: any) {
-      console.error('查询任务异常:', error)
-      alert('查询任务异常: ' + error.message)
+      alert('保存任务异常: ' + error.message)
     }
   }
 
 </script>
 
 <style lang="less" scoped>
+  .home-container {
+    width: 100%;
+    padding: 20px;
+  }
 </style>
