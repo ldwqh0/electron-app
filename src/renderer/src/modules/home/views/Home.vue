@@ -4,12 +4,10 @@
   <el-button @click="writeFile()">测试</el-button>
   <el-button @click="saveTask()">新增一个task</el-button>
   <el-button @click="loadTasks()">查看所有task</el-button>
-  <xz-uploader auto-upload url="/files" />
 </template>
 
 <script lang="ts" setup>
   /* eslint-disable @typescript-eslint/no-explicit-any */
-  import XzUploader from '@/components/XzUploader'
   import { useHttp } from '@/http'
   import { reactive } from 'vue'
 

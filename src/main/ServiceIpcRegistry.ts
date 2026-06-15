@@ -3,7 +3,7 @@
  * 自动将 Service 导出的函数注册为 IPC 处理器
  */
 
-import { ipcMain, IpcMainInvokeHandler } from 'electron'
+import { ipcMain } from 'electron'
 
 /**
  * 创建成功的 IPC 响应
@@ -12,8 +12,11 @@ export function successResponse<T = any> (data: T) {
   return { success: true, data }
 }
 
-function withErrorHandler (handler: IpcMainInvokeHandler): IpcMainInvokeHandler {
-  return async (...args) => {
+/**
+ * 错误处理包装器
+ */
+function withErrorHandler (handler: (...args: any[]) => Promise<any>) {
+  return async (...args: any[]) => {
     try {
       return await handler(...args)
     } catch (error) {
@@ -47,13 +50,12 @@ export function registerServiceAsIpc (
 
     const channel = `${prefix}:${name}`
     // 创建 IPC 处理器
-    const handler: IpcMainInvokeHandler = withErrorHandler(async (_, ...args) => {
+    const handler = withErrorHandler(async (_, ...args) => {
       const result = await fn(...args)
       return successResponse(result)
     })
     // 注册
     ipcMain.handle(channel, handler)
-    console.log(`  ✓ Registered: ${channel}`)
   })
 }
 
