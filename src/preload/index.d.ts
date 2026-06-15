@@ -7,6 +7,7 @@ declare global {
     api: {
       request<T = any, R = AxiosResponse<T>, D = any> (key: string, option: AxiosRequestConfig<D>): Promise<R>,
       onResponse (onSuccess: (key: string, v: AxiosResponse) => void, onFailure: (key: string, v) => void): void,
+      writeFile: (content: string) => Promise<{ success: boolean; message: string }>,
     };
   }
 }

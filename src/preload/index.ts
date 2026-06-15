@@ -13,6 +13,10 @@ const api = {
     ipcRenderer.on("response-failure", (_, key, args) => {
       onFailure(key, args);
     });
+  },
+  // 文件写入 API
+  writeFile: (content: string) => {
+    return ipcRenderer.invoke('write-to-file', content);
   }
 };
 

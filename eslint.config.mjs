@@ -1,111 +1,71 @@
-import pluginTypescript from "@typescript-eslint/eslint-plugin";
-import typescriptParser from "@typescript-eslint/parser";
-import pluginVue from "eslint-plugin-vue";
-import vueParser from "vue-eslint-parser";
 import pluginN from "eslint-plugin-n";
 import pluginPromise from "eslint-plugin-promise";
-import pluginImport from "eslint-plugin-import";
+import pluginVue from "eslint-plugin-vue";
 import globals from "globals";
+import { defineConfig } from "eslint/config";
+import { standardRules } from "./eslint/standard-rules.mjs";
+import importX from "eslint-plugin-import-x";
+import tslint from "typescript-eslint";
 
-import standardConfig from "eslint-config-standard";
+console.log(process.env.NODE_ENV);
 
 const standard = {
   plugins: {
-    "import": pluginImport,
     n: pluginN,
-    promise: pluginPromise
+    promise: pluginPromise,
+    "import-x": importX
   },
   rules: {
-    ...standardConfig.rules,
+    ...standardRules,
     "no-undef": "error",
-    "no-console": process.env.NODE_ENV === "production" ? "error" : "off",
+    "no-console": process.env.NODE_ENV === "production" ? "error" : "warn",
     "no-debugger": process.env.NODE_ENV === "production" ? "error" : "off"
   },
   languageOptions: {
     ecmaVersion: "latest",
-    globals: {
-      ...globals.browser
-    }
-  }
-};
-const typescriptRules = {
-  ...pluginTypescript.configs.recommended.rules,
-  "@typescript-eslint/indent": ["error", 2],
-  // '@typescript-eslint/member-delimiter-style': ['error', {
-  //   singleline: {
-  //     delimiter: 'comma',
-  //     requireLast: false
-  //   },
-  //   multiline: {
-  //     delimiter: 'none',
-  //     requireLast: true
-  //   }
-  // }],
-  "@typescript-eslint/no-explicit-any": "error",
-  "@typescript-eslint/explicit-function-return-type": ["error", {
-    allowExpressions: true,
-    allowTypedFunctionExpressions: true,
-    allowHigherOrderFunctions: false,
-    allowDirectConstAssertionInArrowFunctions: false,
-    allowConciseArrowFunctionExpressionsStartingWithVoid: false,
-    allowFunctionsWithoutTypeParameters: false
-  }]
-};
-export default [{
-  files: ["src/**/*.js", "src/**/*.mjs", "src/**/*.cjs"],
-  ...standard
-}, {
-  files: ["src/**/*.ts"],
-  plugins: {
-    ...standard.plugins,
-    "@typescript-eslint": pluginTypescript
-  },
-  languageOptions: {
-    ecmaVersion: "latest",
     sourceType: "module",
-    parser: typescriptParser,
     globals: {
       ...globals.browser,
-      process: true,
       env: true
     }
-  },
-  rules: {
-    ...standard.rules,
-    ...typescriptRules,
-    "indent": "off"
   }
-},
-  ...pluginVue.configs["flat/strongly-recommended"],
+};
+
+export default defineConfig(
+  {
+    files: ["src/**/*.js", "src/**/*.mjs", "src/**/*.cjs"],
+    ...standard
+  },
+  {
+    files: ["src/**/*.ts", "src/**/*.tsx"],
+    extends: [
+      standard,
+      ...tslint.configs.recommended
+    ]
+  },
   {
     files: ["src/**/*.vue"],
-    plugins: {
-      ...standard.plugins,
-      "@typescript-eslint": pluginTypescript,
-      vue: pluginVue
-    },
+    extends: [
+      standard,
+      ...tslint.configs.recommended,
+      pluginVue.configs["flat/strongly-recommended"]
+    ],
     languageOptions: {
-      ecmaVersion: "latest",
-      sourceType: "module",
-      parser: vueParser,
       parserOptions: {
-        parser: "@typescript-eslint/parser"
+        parser: tslint.parser
       },
       globals: {
-        ...globals.browser,
-        env: true
+        env: true,
+        ...globals.browser
       }
     },
     rules: {
-      ...standard.rules,
-      ...typescriptRules,
-      "indent": "off",
-      "@typescript-eslint/indent": "off",
+      indent: "off",
+      "@typescript-eslint/no-unused-vars": "warn",
       "vue/script-indent": ["error", 2, {
         baseIndent: 1,
         switchCase: 1
       }],
-      "no-console": "off",
       "vue/multi-word-component-names": "off",
       "vue/first-attribute-linebreak": ["error", {
         singleline: "ignore",
@@ -142,4 +102,5 @@ export default [{
         }
       ]
     }
-  }];
+  }
+);

@@ -945,16 +945,16 @@ export interface Order extends Serializable {
     ascending?: boolean;
 }
 
-export interface Iterable<T> {
+export interface Iterable<_T> {
 }
 
-export interface Supplier<T> {
+export interface Supplier<_T> {
 }
 
 export interface Stream<T> extends BaseStream<T, Stream<T>> {
 }
 
-export interface BaseStream<T, S> extends AutoCloseable {
+export interface BaseStream<_T, _S> extends AutoCloseable {
     parallel?: boolean;
 }
 
