@@ -2,8 +2,8 @@
  * IPC 自动注册工具
  * 自动将 Service 导出的函数注册为 IPC 处理器
  */
-
 import { ipcMain } from 'electron'
+import log from 'electron-log'
 
 /**
  * 创建成功的 IPC 响应
@@ -27,6 +27,7 @@ function withErrorHandler (handler: (...args: any[]) => Promise<any>) {
     try {
       return await handler(...args)
     } catch (error) {
+      log.error(error)
       return {
         success: false,
         status: 500,
@@ -74,7 +75,7 @@ export function registerServiceAsIpc (
 export function unregisterServiceIpc (prefix: string): void {
   // 注意：Electron 没有直接获取所有 channel 的方法
   // 需要在注册时记录，这里提供基础实现
-  console.log(`⚠️ Unregister prefix: ${prefix} (manual implementation needed)`)
+  log.info(`⚠️ Unregister prefix: ${prefix} (manual implementation needed)`)
 }
 
 export default {

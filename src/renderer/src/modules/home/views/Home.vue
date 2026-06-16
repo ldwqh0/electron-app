@@ -1,15 +1,12 @@
 <template>
-  <div class="home-container">
+  <div v-loading="state.loading" class="home-container">
     <el-form style="display: flex;justify-content: space-between;">
       <div style="display: flex; gap: 8px;">
         <el-form-item label="">
           <el-input v-model="state.serverParams.keyword"
                     clearable
-                    placeholder="请输入任务名称搜索"
-                    @clear="handleSearch"
-                    @keyup.enter="handleSearch" />
+                    placeholder="请输入任务名称搜索" />
         </el-form-item>
-        <el-button type="primary" @click="handleSearch">搜索</el-button>
       </div>
       <div>
         <el-form-item label="">
@@ -22,17 +19,28 @@
                     :server-params="state.serverParams"
                     ajax="sync-task/findAll"
                     class="table-container">
-      <el-table-column label="ID" prop="id" />
-      <el-table-column label="NAME" prop="dataName" />
-      <el-table-column label="START TIME" prop="startTime" />
-      <el-table-column label="COMPLETED TIME" prop="completedTime" />
-      <el-table-column label="EXCEPTION" prop="exception" />
-      <el-table-column label="SUCCESS COUNT" prop="successCount" />
-      <el-table-column label="FAIL COUNT" prop="failCount" />
-      <el-table-column label="READY" prop="ready" />
+      <el-table-column label="任务名称" prop="dataName" />
+      <el-table-column label="开始时间" prop="startTime" />
+      <el-table-column label="完成时间" prop="completedTime" />
+      <el-table-column label="异常信息" prop="exception" />
+      <el-table-column label="成功数量" prop="succeedCount" />
+      <el-table-column label="失败数量" prop="failCount" />
+      <el-table-column label="状态">
+        <template #default="{row}">
+          <span v-if="row.running">运行中</span>
+          <span v-else-if="row.ready">就绪</span>
+          <span v-else-if="row.completed">已完成</span>
+          <span v-else-if="!row.ready">未开始</span>
+        </template>
+      </el-table-column>
       <el-table-column label="操作">
         <template #default="{row}">
-          <el-button type="primary" @click="execute(row)">执行任务</el-button>
+          <el-button :disabled="row.running || row.completedTime"
+                     text
+                     type="primary"
+                     @click="execute(row)">
+            执行
+          </el-button>
         </template>
       </el-table-column>
     </ele-datatables>
@@ -62,27 +70,25 @@
   import { EleDatatables } from '@/components'
   import { SyncTask } from '../../../../../types'
   import { ElMessage } from 'element-plus'
+  import winApi from '@/http/winApi'
 
   const state = reactive<{
     serverParams: {
       keyword?: string
     },
     current: SyncTask | null
-    taskDialogVisible: boolean
+    taskDialogVisible: boolean,
+    loading: boolean
   }>({
     serverParams: {
       keyword: ''
     },
     taskDialogVisible: false,
-    current: null
+    current: null,
+    loading: false
   })
   const http = window.api
   const dataTable = ref<InstanceType<typeof EleDatatables> | null>(null)
-
-  // 搜索处理
-  function handleSearch () {
-    dataTable.value?.reloadData()
-  }
 
   async function newTask () {
     state.taskDialogVisible = true
@@ -91,13 +97,20 @@
     }
   }
 
-  function execute (row: SyncTask) {
-    http.post('task-executor/execute', { id: row.id })
+  async function execute (row: SyncTask) {
+    try {
+      const data = winApi.post('task-executor/execute', { id: row.id })
+      console.log(data)
+      dataTable.value?.reloadData()
+    } catch (error: any) {
+      console.error(error)
+      alert('执行任务异常: ' + error.message)
+    }
   }
 
   async function saveTask () {
     try {
-      const result = await window.api.post('sync-task/save', toRaw(state.current))
+      const result = await winApi.post('sync-task/save', toRaw(state.current))
       if (result.status === 200) {
         ElMessage.success({ message: '任务保存成功！' })
         dataTable.value?.reloadData()

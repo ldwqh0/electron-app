@@ -7,6 +7,7 @@
         </template>
       </el-empty>
     </div>
+
     <router-view v-else
                  v-loading="routing"
                  element-loading-background="rgba(122, 122, 122, 0.8)"
@@ -31,15 +32,16 @@
   const routing = computed(() => {
     return false
   })
+
 </script>
 <style lang="less" scoped>
-.error-page {
-  display: flex;
-  flex-flow: column;
-  justify-content: center;
+  .error-page {
+    display: flex;
+    flex-flow: column;
+    justify-content: center;
 
-  span {
-    font-size: 24px;
+    span {
+      font-size: 24px;
+    }
   }
-}
 </style>

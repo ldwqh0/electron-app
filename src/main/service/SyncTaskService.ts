@@ -3,46 +3,46 @@ import type { RangePagedModel, SyncTask } from '../../types'
 import { isEmpty } from 'lodash-es'
 import type { SQLInputValue, SQLOutputValue } from 'node:sqlite'
 import { PageableParam } from '../../types/PageableParam'
-import cleanObj from '../../lib/cleanObj'
 
-// 初始化数据库表（在模块加载时执行）
+const initStmt = db.prepare(`
+  UPDATE sync_task_ SET running = 0 WHERE running = 1
+`)
 
-function initializeDatabase (): void {
-  // 创建同步任务表
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS sync_tasks (
-      id INTEGER PRIMARY KEY,
-      dataName TEXT NOT NULL,
-      startTime TEXT NOT NULL,
-      completedTime TEXT,
-      exception TEXT,
-      successCount INTEGER DEFAULT 0,
-      failCount INTEGER DEFAULT 0,
-      ready INTEGER DEFAULT 0
-    )
-  `)
-}
+const completeStmt = db.prepare(`
+  UPDATE sync_task_
+  SET succeed_count = (SELECT COUNT(1) FROM sync_task_data WHERE task_id = @id AND succeed = 1),
+      fail_count = (SELECT COUNT(1) FROM sync_task_data WHERE task_id = @id AND succeed = 0),
+      running = 0,
+      last_modified_at = CURRENT_TIMESTAMP,
+      version = version + 1
+  WHERE id = @id`
+)
 
 // 预编译 SQL 语句
 const insertStmt = db.prepare(`
-  INSERT INTO sync_tasks (dataName, startTime, ready)
+  INSERT INTO sync_task_ (data_name, start_time, ready)
   VALUES (@dataName, @startTime, @ready)
 `)
+insertStmt.setAllowUnknownNamedParameters(true)
 
 const updateStmt = db.prepare(`
-  UPDATE sync_tasks
-  SET dataName = @dataName,
-      startTime = @startTime,
-      completedTime = @completedTime,
+  UPDATE sync_task_
+  SET data_name = @dataName,
+      start_time = @startTime,
+      completed_time = @completedTime,
       exception = @exception,
-      successCount = @successCount,
-      failCount = @failCount,
-      ready = @ready
-  WHERE id = @id
+      succeed_count = @succeedCount,
+      fail_count = @failCount,
+      ready = @ready,
+      running = @running,
+      last_modified_at = CURRENT_TIMESTAMP,
+      version = version + 1
+  WHERE id = @id AND version = @version
 `)
+updateStmt.setAllowUnknownNamedParameters(true)
 
-const selectStmt = db.prepare('SELECT * FROM sync_tasks WHERE id = ?')
-const deleteStmt = db.prepare('DELETE FROM sync_tasks WHERE id = ?')
+const selectStmt = db.prepare('SELECT * FROM sync_task_ WHERE id = ?')
+const deleteStmt = db.prepare('DELETE FROM sync_task_ WHERE id = ?')
 
 /**
  * 将 SyncTask 转换为数据库存储格式
@@ -53,9 +53,11 @@ function toDbFormat (data: SyncTask): Record<string, SQLInputValue> {
     startTime: (data.startTime instanceof Date ? data.startTime.toISOString() : data.startTime) ?? null,
     completedTime: (data.completedTime instanceof Date ? data.completedTime.toISOString() : data.completedTime) ?? null,
     exception: data.exception as string ?? null,
-    successCount: data.successCount ?? 0,
+    successCount: data.succeedCount ?? 0,
     failCount: data.failCount ?? 0,
-    ready: data.ready ? 1 : 0
+    running: data.running ? 1 : 0,
+    ready: data.ready ? 1 : 0,
+    version: data.version ?? 0
   }
 }
 
@@ -66,14 +68,18 @@ function toDbFormat (data: SyncTask): Record<string, SQLInputValue> {
 function fromDbFormat (row: Record<string, SQLOutputValue>): SyncTask {
   return {
     id: row.id as number,
-    dataName: row.dataName as string,
-    startTime: row.startTime as unknown as Date,
-    completedTime: row.completedTime as unknown as Date | null,
+    dataName: row.data_name as string,
+    startTime: new Date(row.start_time as string),
+    completedTime: row.completed_time == null ? null : new Date(row.completedTime as string),
     exception: row.exception as string | null,
-    successCount: row.successCount as number,
-    failCount: row.failCount as number,
+    succeedCount: row.succeed_count as number,
+    failCount: row.fail_count as number,
     ready: row.ready === 1,
-    datas: []
+    datas: [],
+    running: row.running === 1,
+    version: row.version as number,
+    createdAt: new Date(row.created_at as string),
+    lastModifiedAt: new Date(row.last_modified_at as string)
   }
 }
 
@@ -83,7 +89,6 @@ function fromDbFormat (row: Record<string, SQLOutputValue>): SyncTask {
  * @returns 保存后的数据（包含数据库生成的 id）
  */
 async function save (data: SyncTask): Promise<SyncTask> {
-  insertStmt.setAllowUnknownNamedParameters(true)
   const result = insertStmt.run(toDbFormat(data))
   return {
     ...data,
@@ -102,12 +107,10 @@ async function update (id: number, data: SyncTask): Promise<SyncTask> {
     id,
     ...toDbFormat(data)
   })
-
   if (result.changes === 0) {
     throw new Error('未找到要更新的记录')
   }
-
-  return data
+  return fromDbFormat(selectStmt.get(id)!)
 }
 
 /**
@@ -127,32 +130,38 @@ async function findById (id: number | string): Promise<SyncTask | null> {
  * @returns 分页数据
  */
 export async function findAll (params: PageableParam): Promise<RangePagedModel<SyncTask, number>> {
-  const { page = 0, size = 10, keyword } = params
-  const queryParams = cleanObj(params)
-  const countSql = 'SELECT COUNT(*) as count FROM sync_tasks WHERE 1=1 '
-  const selectSql = 'SELECT * FROM sync_tasks WHERE 1=1 '
+  const { page = 0, size = 10, ...filters } = params
+  const countSql = 'SELECT COUNT(1) as count FROM sync_task_ WHERE 1=1'
+  const selectSql = 'SELECT * FROM sync_task_ WHERE 1=1'
   // 计算偏移量
-  let where = ''
 
-  if (!isEmpty(keyword)) {
-    where = ' AND dataName LIKE @keyword'
+  let where = ''
+  const queryParams: Record<string, SQLInputValue> = {}
+
+  if (!isEmpty(filters.keyword)) {
+    where = ' AND data_name LIKE @keyword'
+    queryParams.keyword = `%${filters.keyword}%`
   }
 
   // 查询总数
-  const countResult = db.prepare(`${countSql}${where}`).get(queryParams) as { count: number }
-  // 查询分页数据
-  const selectStmt = db.prepare(`${selectSql}${where} ORDER BY id DESC LIMIT @limit OFFSET @offset`)
-  const content = selectStmt.all({
-    ...queryParams,
-    limit: size,
-    offset: page * size
-  }).map(fromDbFormat)
+  const { count } = db.prepare(`${countSql}${where}`).get(queryParams) as { count: number }
+  let content: SyncTask[] = []
+  if (count > 0) {
+    // 查询分页数据
+    const selectStmt = db.prepare(`${selectSql}${where} ORDER BY id DESC LIMIT @limit OFFSET @offset`)
+    content = selectStmt.all({
+      ...queryParams,
+      limit: size,
+      offset: page * size
+    }).map(fromDbFormat)
+  }
+
   return {
     content,
     page: {
       page,
       size,
-      totalElements: countResult.count
+      totalElements: count
     }
   }
 }
@@ -167,12 +176,21 @@ async function remove (id: number): Promise<boolean> {
   return result.changes > 0
 }
 
-initializeDatabase()
+async function completeTask (id: number): Promise<SyncTask | null> {
+  const { changes } = completeStmt.run({ id })
+  return changes > 0 ? fromDbFormat(selectStmt.get(id)!) : null
+}
+
+function init () {
+  initStmt.run()
+}
 
 export default {
   save,
   update,
   findById,
   findAll,
-  remove
+  remove,
+  completeTask,
+  init
 }

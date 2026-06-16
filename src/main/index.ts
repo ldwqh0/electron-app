@@ -7,9 +7,12 @@ import SyncTaskService from './service/SyncTaskService'
 import { registerServiceAsIpc } from './ServiceIpcRegistry'
 import TaskExecutor from './service/TaskExecutor'
 import SyncTaskDataService from './service/SyncTaskDataService'
+import DataService from './service/DataService'
+import log from 'electron-log'
 
 function createWindow () {
   // Create the browser window.
+
   const mainWindow = new BrowserWindow({
     width: 900,
     height: 670,
@@ -83,16 +86,16 @@ app.whenReady().then(() => {
   createWindow()
 
   // 配置数据库（WAL 模式等）
-
   // 自动注册 SyncTaskService 的所有方法为 IPC 处理器
   // 会注册: sync-task:save, sync-task:update, sync-task:findById,
   //        sync-task:findAll, sync-task:remove, sync-task:saveBatch,
   //        sync-task:clearAll, sync-task:closeDatabase
-
+  DataService.init().then(() => {
+    log.info('Database initialized')
+  })
   registerServiceAsIpc(SyncTaskService, 'sync-task')
   registerServiceAsIpc(TaskExecutor, 'task-executor')
   registerServiceAsIpc(SyncTaskDataService, 'task-task-data')
-
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
     // dock icon is clicked and there are no other windows open.

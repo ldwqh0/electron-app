@@ -1,7 +1,14 @@
-import { SyncTaskData } from '../../types'
+import { RangePagedModel, SyncTaskData } from '../../types'
 import { PageableParam } from '../../types/PageableParam'
 import { db } from '../database'
 import { SQLInputValue, SQLOutputValue } from 'node:sqlite'
+import log from 'electron-log'
+
+const initStmt = db.prepare(`
+  UPDATE sync_task_data
+  SET running = 0
+  where running = 1
+`)
 
 const insertStatement = db.prepare(`
   INSERT INTO sync_task_data (task_id, data)
@@ -12,7 +19,7 @@ insertStatement.setAllowUnknownNamedParameters(true)
 const selectNewStmt = db.prepare(`
       SELECT id, task_id, data, succeed, exception, running, version, created_at, last_modified_at
       FROM sync_task_data
-      WHERE running = 0 AND succeeded IS NULL AND task_id = @taskId
+      WHERE running = 0 AND succeed IS NULL AND task_id = @taskId
       LIMIT 1
     `)
 
@@ -28,28 +35,11 @@ const updateStmt = db.prepare(`
       succeed = @succeed,
       exception = @exception,
       running = @running,
-      version = version + 1      
-      updated_at = CURRENT_TIMESTAMP 
+      version = version + 1,
+      last_modified_at = CURRENT_TIMESTAMP 
       WHERE id = @id AND version = @version 
     `)
 updateStmt.setAllowUnknownNamedParameters(true)
-
-function initializeDatabase (): void {
-  // 创建 sync_task_data 表
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS sync_task_data (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_id INTEGER NOT NULL,
-      data TEXT NOT NULL,
-      succeed INTEGER DEFAULT NULL,
-      exception TEXT DEFAULT NULL,
-      running INTEGER DEFAULT 0,
-      version INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      last_modified_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `)
-}
 
 function fromDb (row: Record<string, SQLOutputValue>): SyncTaskData {
   const succeed: boolean | null = row.succeed !== null && row.succeed !== undefined ? row.succeed === 1 : null
@@ -68,7 +58,7 @@ function fromDb (row: Record<string, SQLOutputValue>): SyncTaskData {
 
 function toDb (data: SyncTaskData): Record<string, SQLInputValue> {
   return {
-    task_id: data.taskId,
+    taskId: data.taskId,
     data: data.data,
     succeed: data.succeed ? 1 : 0,
     exception: data.exception ?? '',
@@ -104,35 +94,33 @@ async function saveAll (data: SyncTaskData[]): Promise<SyncTaskData[]> {
 }
 
 function findById (id: number): SyncTaskData | null {
-  const row = selectStmt.get({ id }) as Record<string, SQLOutputValue>
+  const row = selectStmt.get({ id })
   return row ? fromDb(row) : null
 }
 
 async function getNext (taskId: number): Promise<SyncTaskData | null> {
   // 在事务中查询并更新
-
   db.exec('BEGIN TRANSACTION')
   try {
     // 查询待处理的任务
     // 找到一条 running = false，并且 succeeded is null 的记录
     const row = selectNewStmt.get({ taskId }) as Record<string, SQLOutputValue>
-    const data = fromDb(row)
-
     if (!row) {
       db.exec('ROLLBACK')
       return null
     }
-
+    const data = fromDb(row)
     // 修改为 running = true
     data.running = true
     // 更新为 running = true
-    const result = updateStmt.run(toDb(data))
+    const result = updateStmt.run({ id: data.id!, ...toDb(data) })
+    log.info('update changes', result)
     if (result.changes === 0) {
       throw new Error('Failed to update task data')
     } else {
       db.exec('COMMIT')
     }
-    return fromDb(row)
+    return fromDb(selectStmt.get({ id: row.id }) as Record<string, SQLOutputValue>)
   } catch (error) {
     db.exec('ROLLBACK')
     throw error
@@ -141,39 +129,55 @@ async function getNext (taskId: number): Promise<SyncTaskData | null> {
 
 async function findAll (
   params: PageableParam
-): Promise<SyncTaskData[]> {
+): Promise<RangePagedModel<SyncTaskData, number>> {
   const { page, size, ...filters } = params
   const offset = (page - 1) * size
 
-  let sql = 'SELECT id, task_id, data, succeeded, exception, running, version, created_at, last_modified_at FROM sync_task_data WHERE 1=1'
+  const countQuery = 'SELECT count(1) FROM sync_task_data WHERE 1=1 '
+  const sql = `
+    SELECT id, task_id, data, succeeded, exception, running, version, created_at, last_modified_at 
+    FROM sync_task_data WHERE 1=1 
+    `
+  let where = ''
   const queryParams: Record<string, SQLInputValue> = {}
 
   // 添加过滤条件
   if (filters.taskId !== undefined) {
-    sql += ' AND task_id = @taskId'
+    where += ' AND task_id = @taskId'
     queryParams.taskId = filters.taskId as number
   }
   if (filters.running !== undefined) {
-    sql += ' AND running = @running'
+    where += ' AND running = @running'
     queryParams.running = filters.running ? 1 : 0
   }
   if (filters.succeed !== undefined) {
     if (filters.succeed === null) {
-      sql += ' AND succeed IS NULL'
+      where += ' AND succeed IS NULL'
     } else {
-      sql += ' AND succeed = @succeed'
+      where += ' AND succeed = @succeed'
       queryParams.succeed = filters.succeed ? 1 : 0
     }
   }
+  const countStmt = db.prepare(`${countQuery}${where}`)
+  const { count } = countStmt.get(queryParams) as { count: number }
+  let content: SyncTaskData[] = []
+  if (count > 0) {
+    const stmt = db.prepare(`${sql}${where} ORDER BY id ASC LIMIT @limit OFFSET @offset`)
+    content = stmt.all({
+      ...queryParams,
+      limit: size as number,
+      offset
+    }).map(fromDb)
+  }
 
-  sql += ' ORDER BY id ASC LIMIT @limit OFFSET @offset'
-  queryParams.limit = size as number
-  queryParams.offset = offset
-
-  const stmt = db.prepare(sql)
-  const rows = stmt.all(queryParams) as Record<string, SQLOutputValue>[]
-
-  return rows.map(row => fromDb(row))
+  return {
+    content,
+    page: {
+      page,
+      size,
+      totalElements: 0
+    }
+  }
 }
 
 async function update (id: number, data: SyncTaskData): Promise<SyncTaskData> {
@@ -182,12 +186,15 @@ async function update (id: number, data: SyncTaskData): Promise<SyncTaskData> {
   return data
 }
 
-initializeDatabase()
+function init () {
+  initStmt.run()
+}
 
 export default {
   saveAll,
   getNext,
   findAll,
   findById,
-  update
+  update,
+  init
 }

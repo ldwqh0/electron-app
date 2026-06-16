@@ -10,18 +10,6 @@ const api = {
     } else {
       return ipcRenderer.invoke(`${options.url}`, options.params)
     }
-  },
-  get<T = any, R = AxiosResponse<T>> (url: string): Promise<R> {
-    return this.request({ url })
-  },
-  post<T = any, R = AxiosResponse<T>, D = any> (url: string, data: D): Promise<R> {
-    return this.request({ url, method: 'post', data })
-  },
-  put<T = any, R = AxiosResponse<T>, D = any> (url: string, data: D): Promise<R> {
-    return this.request({ url, method: 'put', data })
-  },
-  delete<T = any, R = AxiosResponse<T>> (url: string): Promise<R> {
-    return this.request({ url, method: 'delete' })
   }
 }
 

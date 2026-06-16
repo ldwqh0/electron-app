@@ -1,3 +1,5 @@
+import log from 'electron-log'
+
 // 一个异步的任务生产消费队列
 // 可以同时启动多个并发异步任务进行消费
 // 具体的消费逻辑由用户实现
@@ -19,6 +21,8 @@ class TaskQueue<T> {
     this.queueSize = queueSize
     this.concurrency = concurrency
   }
+
+  onComplete: () => Promise<void> = async () => {}
 
   // 添加任务到队列
   async produce (task: T): Promise<void> {
@@ -63,17 +67,21 @@ class TaskQueue<T> {
     this.activeTasks++
     this.isRunning = true
     this.consumer(task).catch(error => {
-      console.error('Task consumption failed:', error)
+      log.error('Task consumption failed:', error)
     }).then(() => {
       this.activeTasks--
-      // 如果没有活跃任务且队列为空
-      if (this.activeTasks === 0 && this.queue.length === 0) {
-        this.isRunning = false
-      }
-      this.tryConsume()
       // 通知等待的生产者
       if (this.waitingResolvers.length > 0) {
         this.waitingResolvers.shift()!()
+      }
+      // 如果没有活跃任务且队列为空
+      if (this.activeTasks === 0 && this.queue.length === 0) {
+        this.isRunning = false
+        this.onComplete().then(() => {
+          log.info('All tasks completed')
+        })
+      } else {
+        this.tryConsume()
       }
     })
   }

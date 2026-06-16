@@ -6,12 +6,44 @@
 import { DatabaseSync } from 'node:sqlite'
 import { join } from 'path'
 import { app } from 'electron'
+import log from 'electron-log'
 
 // 数据库路径 - 存储在用户数据目录
 const dbPath = join(app.getPath('userData'), 'sync-tasks.db')
 
 // 创建数据库连接（单例）
-export const db = new DatabaseSync(dbPath)
+const db = new DatabaseSync(dbPath)
+
+db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_task_ (
+      id INTEGER PRIMARY KEY,
+      data_name TEXT NOT NULL,
+      start_time DATETIME NOT NULL,
+      completed_time DATETIME,
+      exception TEXT,
+      succeed_count INTEGER DEFAULT 0,
+      fail_count INTEGER DEFAULT 0,
+      ready INTEGER DEFAULT 0,
+      running INTEGER DEFAULT 0,
+      version INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_modified_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+
+db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_task_data (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      data TEXT NOT NULL,
+      succeed INTEGER DEFAULT NULL,
+      exception TEXT DEFAULT NULL,
+      running INTEGER DEFAULT 0,
+      version INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_modified_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
 
 /**
  * 初始化数据库
@@ -31,25 +63,25 @@ function configureDatabase (): void {
   // 设置缓存大小（单位：KB，负数表示 KB，正数表示页数）
   db.exec('PRAGMA cache_size = -2000') // 2MB
 
-  console.log('✅ Database configured')
+  log.info('✅ Database configured')
 }
 
 /**
  * 关闭数据库连接
  */
-export function closeDatabase (): void {
+function closeDatabase (): void {
   try {
     db.close()
-    console.log('✅ Database connection closed')
+    log.info('✅ Database connection closed')
   } catch (error) {
-    console.error('❌ Error closing database:', error)
+    log.error('❌ Error closing database:', error)
   }
 }
 
 /**
  * 检查数据库连接状态
  */
-export function isDatabaseOpen (): boolean {
+function isDatabaseOpen (): boolean {
   try {
     // 尝试执行一个简单的查询来检查连接
     db.prepare('SELECT 1').get()
@@ -62,14 +94,14 @@ export function isDatabaseOpen (): boolean {
 /**
  * 获取数据库路径
  */
-export function getDatabasePath (): string {
+function getDatabasePath (): string {
   return dbPath
 }
 
 /**
  * 获取数据库统计信息
  */
-export function getDatabaseStats (): {
+function getDatabaseStats (): {
   path: string
   isOpen: boolean
   pageSize: number
@@ -98,7 +130,7 @@ export function getDatabaseStats (): {
 configureDatabase()
 
 // 导出默认对象
-export default {
+export {
   db,
   closeDatabase,
   isDatabaseOpen,
