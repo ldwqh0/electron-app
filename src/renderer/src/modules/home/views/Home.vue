@@ -19,10 +19,15 @@
                     :server-params="state.serverParams"
                     ajax="sync-task/findAll"
                     class="table-container">
-      <el-table-column label="任务名称" prop="dataName" />
+      <el-table-column label="任务名称" prop="dataName">
+        <template #default="{row}">
+          <router-link :to="`/${row.id}`">
+            {{ row.dataName }}
+          </router-link>
+        </template>
+      </el-table-column>
       <el-table-column label="开始时间" prop="startTime" />
       <el-table-column label="完成时间" prop="completedTime" />
-      <el-table-column label="异常信息" prop="exception" />
       <el-table-column label="成功数量" prop="succeedCount" />
       <el-table-column label="失败数量" prop="failCount" />
       <el-table-column label="状态">
@@ -40,6 +45,13 @@
                      type="primary"
                      @click="execute(row)">
             执行
+          </el-button>
+
+          <el-button :disabled="!row.running"
+                     text
+                     type="primary"
+                     @click="stop(row)">
+            停止
           </el-button>
         </template>
       </el-table-column>
@@ -99,12 +111,20 @@
 
   async function execute (row: SyncTask) {
     try {
-      const data = winApi.post('task-executor/execute', { id: row.id })
-      console.log(data)
+      await winApi.post('task-executor/execute', { id: row.id })
       dataTable.value?.reloadData()
     } catch (error: any) {
       console.error(error)
       alert('执行任务异常: ' + error.message)
+    }
+  }
+
+  async function stop (row: SyncTask) {
+    try {
+      await winApi.post('task-executor/stop', row.id)
+      dataTable.value?.reloadData()
+    } catch (error: any) {
+      alert('停止任务异常: ' + error.message)
     }
   }
 

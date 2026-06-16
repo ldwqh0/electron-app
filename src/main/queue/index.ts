@@ -14,6 +14,7 @@ class TaskQueue<T> {
   private concurrency: number
   private activeTasks = 0
   private isRunning = false
+  private isStopped = false
   private waitingResolvers: (() => void)[] = []
 
   constructor (consumer: ConsumerFn<T>, queueSize: number = 100, concurrency: number = 5) {
@@ -22,14 +23,31 @@ class TaskQueue<T> {
     this.concurrency = concurrency
   }
 
+  // 获取停止状态
+  get stopped (): boolean {
+    return this.isStopped
+  }
+
   onComplete: () => Promise<void> = async () => {}
 
   // 添加任务到队列
   async produce (task: T): Promise<void> {
+    // 检查是否已停止
+    if (this.isStopped) {
+      throw new Error('Queue is stopped, cannot accept new tasks')
+    }
     // 使用 while 循环确保被唤醒后重新检查条件
     while (this.queue.length >= this.queueSize) {
+      // 如果已停止，抛出错误
+      if (this.isStopped) {
+        throw new Error('Queue is stopped, cannot accept new tasks')
+      }
       // 等待队列有空间
       await this.waitForSpace()
+    }
+    // 再次检查停止状态（等待期间可能被停止）
+    if (this.isStopped) {
+      throw new Error('Queue is stopped, cannot accept new tasks')
     }
     this.queue.push(task)
     // 尝试启动消费
@@ -51,7 +69,13 @@ class TaskQueue<T> {
 
   // 停止所有消费
   stop (): void {
+    this.isStopped = true
     this.isRunning = false
+    // 通知所有等待的生产者
+    const resolvers = [...this.waitingResolvers]
+    this.waitingResolvers = []
+    resolvers.forEach(resolve => resolve())
+    // 清空队列
     this.queue = []
   }
 

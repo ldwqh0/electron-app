@@ -5,7 +5,7 @@ import icon from '../../resources/icon.png?asset'
 import { closeDatabase } from './database'
 import SyncTaskService from './service/SyncTaskService'
 import { registerServiceAsIpc } from './ServiceIpcRegistry'
-import TaskExecutor from './service/TaskExecutor'
+import TaskExecuteService from './service/TaskExecuteService'
 import SyncTaskDataService from './service/SyncTaskDataService'
 import DataService from './service/DataService'
 import log from 'electron-log'
@@ -17,7 +17,7 @@ function createWindow () {
     width: 900,
     height: 670,
     show: false,
-    autoHideMenuBar: false,
+    autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -94,8 +94,8 @@ app.whenReady().then(() => {
     log.info('Database initialized')
   })
   registerServiceAsIpc(SyncTaskService, 'sync-task')
-  registerServiceAsIpc(TaskExecutor, 'task-executor')
-  registerServiceAsIpc(SyncTaskDataService, 'task-task-data')
+  registerServiceAsIpc(TaskExecuteService, 'task-executor')
+  registerServiceAsIpc(SyncTaskDataService, 'sync-task-data')
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
     // dock icon is clicked and there are no other windows open.

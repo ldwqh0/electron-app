@@ -6,7 +6,8 @@ import log from 'electron-log'
 
 const initStmt = db.prepare(`
   UPDATE sync_task_data
-  SET running = 0
+  SET running = 0,
+  succeed = NULL
   where running = 1
 `)
 
@@ -42,17 +43,16 @@ const updateStmt = db.prepare(`
 updateStmt.setAllowUnknownNamedParameters(true)
 
 function fromDb (row: Record<string, SQLOutputValue>): SyncTaskData {
-  const succeed: boolean | null = row.succeed !== null && row.succeed !== undefined ? row.succeed === 1 : null
   return {
     id: row.id as number,
     taskId: row.task_id as number,
     data: row.data as string,
-    succeed,
+    succeed: row.succeed === null ? null : row.succeed === 1,
     exception: (row.exception ?? '') as string,
     running: row.running === 1,
     version: row.version as number,
-    createdAt: new Date(row.created_at as string | Date),
-    lastModifiedAt: new Date(row.last_modified_at as string | Date)
+    createdTime: new Date(row.created_at as string | Date),
+    lastModifiedTime: new Date(row.last_modified_at as string | Date)
   }
 }
 
@@ -60,7 +60,7 @@ function toDb (data: SyncTaskData): Record<string, SQLInputValue> {
   return {
     taskId: data.taskId,
     data: data.data,
-    succeed: data.succeed ? 1 : 0,
+    succeed: data.succeed === null ? null : data.succeed ? 1 : 0,
     exception: data.exception ?? '',
     running: data.running ? 1 : 0,
     version: data.version ?? 0
@@ -112,7 +112,6 @@ async function getNext (taskId: number): Promise<SyncTaskData | null> {
     const data = fromDb(row)
     // 修改为 running = true
     data.running = true
-    // 更新为 running = true
     const result = updateStmt.run({ id: data.id!, ...toDb(data) })
     log.info('update changes', result)
     if (result.changes === 0) {
@@ -132,12 +131,8 @@ async function findAll (
 ): Promise<RangePagedModel<SyncTaskData, number>> {
   const { page, size, ...filters } = params
   const offset = (page - 1) * size
-
-  const countQuery = 'SELECT count(1) FROM sync_task_data WHERE 1=1 '
-  const sql = `
-    SELECT id, task_id, data, succeeded, exception, running, version, created_at, last_modified_at 
-    FROM sync_task_data WHERE 1=1 
-    `
+  const countQuery = 'SELECT count(1) as count FROM sync_task_data WHERE 1=1 '
+  const sql = 'SELECT *  FROM sync_task_data WHERE 1=1 '
   let where = ''
   const queryParams: Record<string, SQLInputValue> = {}
 
@@ -175,7 +170,7 @@ async function findAll (
     page: {
       page,
       size,
-      totalElements: 0
+      totalElements: count
     }
   }
 }

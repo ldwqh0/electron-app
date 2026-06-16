@@ -8,6 +8,10 @@ const initStmt = db.prepare(`
   UPDATE sync_task_ SET running = 0 WHERE running = 1
 `)
 
+const resetTaskStmt = db.prepare(`
+  UPDATE sync_task_data SET running = 0 WHERE running = 1 and task_id=@taskId
+`)
+
 const completeStmt = db.prepare(`
   UPDATE sync_task_
   SET succeed_count = (SELECT COUNT(1) FROM sync_task_data WHERE task_id = @id AND succeed = 1),
@@ -53,7 +57,7 @@ function toDbFormat (data: SyncTask): Record<string, SQLInputValue> {
     startTime: (data.startTime instanceof Date ? data.startTime.toISOString() : data.startTime) ?? null,
     completedTime: (data.completedTime instanceof Date ? data.completedTime.toISOString() : data.completedTime) ?? null,
     exception: data.exception as string ?? null,
-    successCount: data.succeedCount ?? 0,
+    succeedCount: data.succeedCount ?? 0,
     failCount: data.failCount ?? 0,
     running: data.running ? 1 : 0,
     ready: data.ready ? 1 : 0,
@@ -78,8 +82,8 @@ function fromDbFormat (row: Record<string, SQLOutputValue>): SyncTask {
     datas: [],
     running: row.running === 1,
     version: row.version as number,
-    createdAt: new Date(row.created_at as string),
-    lastModifiedAt: new Date(row.last_modified_at as string)
+    createdTime: new Date(row.created_at as string),
+    lastModifiedTime: new Date(row.last_modified_at as string)
   }
 }
 
@@ -118,7 +122,7 @@ async function update (id: number, data: SyncTask): Promise<SyncTask> {
  * @param id 任务 id
  * @returns 同步任务数据
  */
-async function findById (id: number | string): Promise<SyncTask | null> {
+async function findById ({ id }: { id: number | string }): Promise<SyncTask | null> {
   const row = selectStmt.get(Number(id))
   if (!row) return null
   return fromDbFormat(row)
@@ -177,8 +181,16 @@ async function remove (id: number): Promise<boolean> {
 }
 
 async function completeTask (id: number): Promise<SyncTask | null> {
-  const { changes } = completeStmt.run({ id })
-  return changes > 0 ? fromDbFormat(selectStmt.get(id)!) : null
+  db.exec('BEGIN TRANSACTION')
+  try {
+    resetTaskStmt.run({ taskId: id })
+    const { changes } = completeStmt.run({ id })
+    db.exec('COMMIT')
+    return changes > 0 ? fromDbFormat(selectStmt.get(id)!) : null
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
 }
 
 function init () {

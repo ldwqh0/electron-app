@@ -6,6 +6,6 @@ export interface SyncTaskData {
   exception: string
   running: boolean
   version: number
-  createdAt: Date
-  lastModifiedAt: Date
+  createdTime: Date
+  lastModifiedTime: Date
 }

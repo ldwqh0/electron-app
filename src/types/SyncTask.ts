@@ -12,6 +12,6 @@ export interface SyncTask {
   running: boolean,
   version: number,
   datas?: SyncTaskData[]
-  createdAt: Date
-  lastModifiedAt: Date
+  createdTime: Date
+  lastModifiedTime: Date
 }

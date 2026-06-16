@@ -1,5 +1,5 @@
-import TaskExecutor from '../service/TaskExecutor'
+import TaskExecuteService from '../service/TaskExecuteService'
 
-TaskExecutor.execute(1).then(() => {
+TaskExecuteService.execute(1).then(() => {
   console.log('处理完成')
 })
