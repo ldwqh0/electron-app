@@ -1,7 +1,7 @@
 import { db } from '../database'
 import type { RangePagedModel, SyncTask } from '../../types'
 import { isEmpty } from 'lodash-es'
-import type { SQLOutputValue } from 'node:sqlite'
+import type { SQLInputValue, SQLOutputValue } from 'node:sqlite'
 import { PageableParam } from '../../types/PageableParam'
 import cleanObj from '../../lib/cleanObj'
 
@@ -47,14 +47,14 @@ const deleteStmt = db.prepare('DELETE FROM sync_tasks WHERE id = ?')
 /**
  * 将 SyncTask 转换为数据库存储格式
  */
-function toDbFormat (data: SyncTask) {
+function toDbFormat (data: SyncTask): Record<string, SQLInputValue> {
   return {
-    dataName: data.dataName,
-    startTime: data.startTime instanceof Date ? data.startTime.toISOString() : data.startTime,
-    completedTime: data.completedTime instanceof Date ? data.completedTime.toISOString() : data.completedTime,
-    exception: data.exception,
-    successCount: data.successCount,
-    failCount: data.failCount,
+    dataName: data.dataName ?? null,
+    startTime: (data.startTime instanceof Date ? data.startTime.toISOString() : data.startTime) ?? null,
+    completedTime: (data.completedTime instanceof Date ? data.completedTime.toISOString() : data.completedTime) ?? null,
+    exception: data.exception as string ?? null,
+    successCount: data.successCount ?? 0,
+    failCount: data.failCount ?? 0,
     ready: data.ready ? 1 : 0
   }
 }
@@ -83,11 +83,8 @@ function fromDbFormat (row: Record<string, SQLOutputValue>): SyncTask {
  * @returns 保存后的数据（包含数据库生成的 id）
  */
 async function save (data: SyncTask): Promise<SyncTask> {
-  const result = insertStmt.run({
-    dataName: data.dataName ?? '',
-    startTime: data.startTime,
-    ready: data.ready ? 1 : 0
-  })
+  insertStmt.setAllowUnknownNamedParameters(true)
+  const result = insertStmt.run(toDbFormat(data))
   return {
     ...data,
     id: Number(result.lastInsertRowid)
