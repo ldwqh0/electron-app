@@ -30,6 +30,11 @@
       <el-table-column label="SUCCESS COUNT" prop="successCount" />
       <el-table-column label="FAIL COUNT" prop="failCount" />
       <el-table-column label="READY" prop="ready" />
+      <el-table-column label="操作">
+        <template #default="{row}">
+          <el-button type="primary" @click="execute(row)">执行任务</el-button>
+        </template>
+      </el-table-column>
     </ele-datatables>
     <el-dialog v-model="state.taskDialogVisible" title="新任务" @closed="state.current=null">
       <el-form v-if="state.current" :model="state.current" label-width="100">
@@ -84,6 +89,10 @@
     state.current = {
       dataName: '凭证同步任务'
     }
+  }
+
+  function execute (row: SyncTask) {
+    http.post('task-executor/execute', { id: row.id })
   }
 
   async function saveTask () {

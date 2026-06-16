@@ -1,4 +1,11 @@
 export interface SyncTaskData {
-  id: number,
+  id?: number
+  taskId: number
   data: string
+  succeed: boolean | null
+  exception: string
+  running: boolean
+  version: number
+  createdAt: Date
+  lastModifiedAt: Date
 }

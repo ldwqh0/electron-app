@@ -5,6 +5,8 @@ import icon from '../../resources/icon.png?asset'
 import { closeDatabase } from './database'
 import SyncTaskService from './service/SyncTaskService'
 import { registerServiceAsIpc } from './ServiceIpcRegistry'
+import TaskExecutor from './service/TaskExecutor'
+import SyncTaskDataService from './service/SyncTaskDataService'
 
 function createWindow () {
   // Create the browser window.
@@ -88,6 +90,8 @@ app.whenReady().then(() => {
   //        sync-task:clearAll, sync-task:closeDatabase
 
   registerServiceAsIpc(SyncTaskService, 'sync-task')
+  registerServiceAsIpc(TaskExecutor, 'task-executor')
+  registerServiceAsIpc(SyncTaskDataService, 'task-task-data')
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
