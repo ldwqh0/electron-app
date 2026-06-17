@@ -49,8 +49,8 @@ const completeStmt = db.prepare(`
 
 // 预编译 SQL 语句
 const insertStmt = db.prepare(`
-  INSERT INTO sync_task_ (data_name, start_time, end_time, ready)
-  VALUES (@dataName, @startTime, @endTime, @ready)
+  INSERT INTO sync_task_ (data_name, start_time, end_time, note, ready)
+  VALUES (@dataName, @startTime, @endTime, @note, @ready)
 `)
 insertStmt.setAllowUnknownNamedParameters(true)
 
@@ -61,6 +61,7 @@ const updateStmt = db.prepare(`
       end_time = @endTime,
       completed_time = @completedTime,
       exception = @exception,
+      note = @note,
       succeed_count = @succeedCount,
       fail_count = @failCount,
       ready = @ready,
@@ -84,6 +85,7 @@ function toDbFormat (data: SyncTask): Record<string, SQLInputValue> {
     endTime: (data.endTime instanceof Date ? data.endTime.toISOString() : data.endTime) ?? null,
     completedTime: (data.completedTime instanceof Date ? data.completedTime.toISOString() : data.completedTime) ?? null,
     exception: data.exception as string ?? null,
+    note: data.note,
     succeedCount: data.succeedCount ?? 0,
     failCount: data.failCount ?? 0,
     running: data.running ? 1 : 0,
@@ -104,6 +106,7 @@ function fromDbFormat (row: Record<string, SQLOutputValue>): SyncTask {
     endTime: new Date(row.end_time as string),
     completedTime: row.completed_time == null ? null : new Date(row.completed_time as string),
     exception: row.exception as string | null,
+    note: row.note as string | null,
     succeedCount: row.succeed_count as number,
     failCount: row.fail_count as number,
     ready: row.ready === 1,

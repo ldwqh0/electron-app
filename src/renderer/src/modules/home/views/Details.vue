@@ -32,9 +32,11 @@
     </el-form>
     <ele-datatables :http="http" :server-params="serverParams" ajax="sync-task-data/findAll">
       <el-table-column label="ID" prop="id" />
-      <el-table-column label="数据项" prop="data">
+      <el-table-column label="数据项" prop="data" width="300">
         <template #default="{row}">
-          <el-button text type="primary" @click="showData(row)">点击查看</el-button>
+          <el-button text type="primary" @click="showData(row.data)">
+            {{ truncateData(row.data) }}
+          </el-button>
         </template>
       </el-table-column>
       <el-table-column label="状态" prop="running">
@@ -48,7 +50,13 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="异常"
+      <el-table-column label="异常" prop="exception">
+        <template #default="{row}">
+          <el-button text type="primary" @click="showData(row.exception)">
+            {{ truncateData(row.exception) }}
+          </el-button>
+        </template>
+      </el-table-column>
 
       <el-table-column :formatter="dateTimeFormatter()" label="创建时间" prop="createdTime" />
       <el-table-column label="操作" width="100">
@@ -113,7 +121,8 @@
       running: false,
       version: 0,
       createdTime: new Date(),
-      lastModifiedTime: new Date()
+      lastModifiedTime: new Date(),
+      note: ''
     }
   })
 
@@ -126,12 +135,20 @@
   }
 
   async function execute (data: SyncTaskData) {
-    console.log(data)
+    const r = await winApi.post('task-executor/executeItem', data.id)
+    console.log(r)
   }
 
-  function showData (data: SyncTaskData) {
-    state.dataDialog.content = data.data
+  function showData (data: string) {
+    state.dataDialog.content = data
     state.dataDialog.visible = true
+  }
+
+  function truncateData (data: string): string {
+    if (data.length <= 20) {
+      return data
+    }
+    return data.substring(0, 20) + '...'
   }
 
   winApi.post('sync-task/findById', props.taskId).then(response => {

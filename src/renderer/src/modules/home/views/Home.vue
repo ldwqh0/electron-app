@@ -62,19 +62,31 @@
         </template>
       </el-table-column>
     </ele-datatables>
-    <el-dialog v-model="state.taskDialogVisible" title="新任务" @closed="state.current=null">
-      <el-form v-if="state.current" :model="state.current" label-width="100">
+    <el-dialog v-model="state.taskDialogVisible"
+               :close-on-click-modal="false"
+               :close-on-press-escape="false"
+               title="新任务"
+               @closed="state.current=null">
+      <el-form v-if="state.current"
+               ref="taskForm"
+               :model="state.current"
+               :rules="taskRules"
+               label-width="120">
         <el-form-item label="任务名称" prop="dataName">
-          <el-input v-model="state.current.dataName" />
+          <el-input v-model="state.current.dataName" maxlength="100" show-word-limit />
         </el-form-item>
         <el-form-item label="任务开始日期" prop="startTime">
-          <el-date-picker v-model="state.current.startTime" value-format="YYYY-MM-DD" />
+          <el-date-picker v-model="state.current.startTime" />
         </el-form-item>
         <el-form-item label="任务结束日期" prop="endTime">
-          <el-date-picker v-model="state.current.endTime" value-format="YYYY-MM-DD" />
+          <el-date-picker v-model="state.current.endTime" />
         </el-form-item>
         <el-form-item label="备注" prop="note">
-          <el-input type="textarea" />
+          <el-input v-model="state.current.note"
+                    :rows="4"
+                    maxlength="400"
+                    show-word-limit
+                    type="textarea" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -86,8 +98,7 @@
 </template>
 
 <script lang="ts" setup>
-  /* eslint-disable @typescript-eslint/no-explicit-any */
-  import { reactive, ref, toRaw } from 'vue'
+  import { reactive, toRaw, useTemplateRef } from 'vue'
   import { EleDatatables } from '@/components'
   import type { SyncTask } from '@/types'
   import { ElMessage } from 'element-plus'
@@ -112,15 +123,35 @@
     loading: false
   })
   const http = window.api as AxiosInstance
-  const dataTable = ref<InstanceType<typeof EleDatatables> | null>(null)
+  const dataTable = useTemplateRef('dataTable')
+  const taskForm = useTemplateRef('taskForm')
+
+  // 表单校验规则
+  const taskRules = {
+    dataName: [
+      { required: true, message: '请输入任务名称', trigger: 'blur' },
+      { max: 100, message: '任务名称不能超过100个字符', trigger: 'blur' }
+    ],
+    startTime: [
+      { required: true, message: '请选择任务开始日期', trigger: 'change' }
+    ],
+    endTime: [
+      { required: true, message: '请选择任务结束日期', trigger: 'change' }
+    ],
+    note: [
+      { max: 400, message: '备注不能超过400个字符', trigger: 'blur' }
+    ]
+  }
 
   async function newTask () {
     state.taskDialogVisible = true
     state.current = {
       completedTime: null,
       createdTime: new Date(),
+      endTime: new Date(),
       datas: undefined,
       exception: null,
+      note: null,
       failCount: 0,
       id: 0,
       lastModifiedTime: new Date(),
@@ -135,12 +166,11 @@
 
   async function execute (row: SyncTask) {
     try {
-      const rsp = await winApi.post('task-executor/execute', row.id)
-      console.log(rsp)
+      await winApi.post('task-executor/execute', row.id)
       dataTable.value?.reloadData()
-    } catch (error: any) {
-      console.error(error)
-      alert('执行任务异常: ' + error.message)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '未知错误'
+      ElMessage.error('执行任务异常: ' + message)
     }
   }
 
@@ -148,21 +178,30 @@
     try {
       await winApi.post('task-executor/stop', row.id)
       dataTable.value?.reloadData()
-    } catch (error: any) {
-      alert('停止任务异常: ' + error.message)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '未知错误'
+      ElMessage.error('停止任务异常: ' + message)
     }
   }
 
   async function saveTask () {
     try {
+      // 表单校验
+      if (!taskForm.value) return
+      await taskForm.value.validate()
       const result = await winApi.post('sync-task/save', toRaw(state.current))
       if (result.status === 200) {
         ElMessage.success({ message: '任务保存成功！' })
         dataTable.value?.reloadData()
         state.taskDialogVisible = false
       }
-    } catch (error: any) {
-      alert('保存任务异常: ' + error.message)
+    } catch (error: unknown) {
+      // 表单校验失败会抛出错误,但不显示提示
+      if (error instanceof Error && error.message) {
+        return
+      }
+      const message = error instanceof Error ? error.message : '未知错误'
+      ElMessage.error('保存任务异常: ' + message)
     }
   }
 

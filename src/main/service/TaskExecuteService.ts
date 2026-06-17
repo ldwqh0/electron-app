@@ -24,19 +24,36 @@ function fetchData (task: SyncTask): Promise<SyncTaskData[]> {
       }
       await SyncTaskDataService.saveAll(data)
       resolve(data)
-    }, 5000)
+    }, 3000)
   })
 }
 
 // 定义任务消费者函数
 async function saveToRemote (taskData: SyncTaskData): Promise<void> {
-  return new Promise((resolve) => setTimeout(() => {
-    log.info('save to remote success', taskData)
-    taskData.succeed = true
-    taskData.running = false
-    SyncTaskDataService.update(taskData.id!, taskData)
-    resolve()
-  }, 10000))
+  return new Promise((resolve, reject) => setTimeout(() => {
+    if (Number(taskData.data) % 4 === 0) {
+      log.info('save to remote success', taskData)
+      taskData.succeed = false
+      taskData.running = false
+      taskData.exception = '数据模拟错误'
+      SyncTaskDataService.update(taskData.id!, taskData)
+      reject(new Error('数据模拟错误'))
+    } else {
+      taskData.succeed = true
+      taskData.running = false
+      SyncTaskDataService.update(taskData.id!, taskData)
+      resolve()
+    }
+  }, 100))
+}
+
+async function executeItem (id: number): Promise<void> {
+  const r = SyncTaskDataService.findById(id)
+  if (r != null) {
+    return saveToRemote(r)
+  } else {
+    return Promise.reject(new Error('Task not found'))
+  }
 }
 
 async function execute (id: number): Promise<SyncTask | null> {
@@ -112,5 +129,6 @@ async function processAllTaskData (id: number, queue: TaskQueue<SyncTaskData>): 
 
 export default {
   execute,
-  stop
+  stop,
+  executeItem
 }

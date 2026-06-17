@@ -7,6 +7,7 @@ export interface SyncTask {
   endTime: Date;
   completedTime: Date | null;
   exception: string | null;
+  note: string | null;
   succeedCount: number;
   failCount: number;
   ready: boolean;

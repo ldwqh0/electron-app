@@ -127,7 +127,6 @@ async function findAll (
   params: PageableParam
 ): Promise<RangePagedModel<SyncTaskData, number>> {
   const { page, size, ...filters } = params
-  const offset = (page - 1) * size
   const countQuery = 'SELECT count(1) as count FROM sync_task_data WHERE 1=1 '
   const sql = 'SELECT *  FROM sync_task_data WHERE 1=1 '
   let where = ''
@@ -158,7 +157,7 @@ async function findAll (
     content = stmt.all({
       ...queryParams,
       limit: size as number,
-      offset
+      offset: page * size
     }).map(fromDb)
   }
 

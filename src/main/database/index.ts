@@ -21,6 +21,7 @@ db.exec(`
       start_time DATETIME NOT NULL,
       end_time DATETIME NOT NULL,
       completed_time DATETIME,
+      note TEXT,
       exception TEXT,
       succeed_count INTEGER DEFAULT 0,
       fail_count INTEGER DEFAULT 0,
