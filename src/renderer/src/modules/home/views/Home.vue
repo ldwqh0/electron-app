@@ -27,6 +27,7 @@
         </template>
       </el-table-column>
       <el-table-column :formatter="dateFormatter()" label="开始时间" prop="startTime" />
+      <el-table-column :formatter="dateFormatter()" label="结束日期" prop="endTime" />
       <el-table-column :formatter="dateTimeFormatter()" label="完成时间" prop="completedTime" />
       <el-table-column label="成功数量" prop="succeedCount" />
       <el-table-column label="失败数量" prop="failCount" />
@@ -68,6 +69,9 @@
         </el-form-item>
         <el-form-item label="任务开始日期" prop="startTime">
           <el-date-picker v-model="state.current.startTime" value-format="YYYY-MM-DD" />
+        </el-form-item>
+        <el-form-item label="任务结束日期" prop="endTime">
+          <el-date-picker v-model="state.current.endTime" value-format="YYYY-MM-DD" />
         </el-form-item>
         <el-form-item label="备注" prop="note">
           <el-input type="textarea" />

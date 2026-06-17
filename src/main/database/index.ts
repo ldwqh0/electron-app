@@ -19,6 +19,7 @@ db.exec(`
       id INTEGER PRIMARY KEY,
       data_name TEXT NOT NULL,
       start_time DATETIME NOT NULL,
+      end_time DATETIME NOT NULL,
       completed_time DATETIME,
       exception TEXT,
       succeed_count INTEGER DEFAULT 0,

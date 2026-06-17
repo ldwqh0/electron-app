@@ -4,6 +4,7 @@ export interface SyncTask {
   id: number;
   dataName: string;
   startTime: Date;
+  endTime: Date;
   completedTime: Date | null;
   exception: string | null;
   succeedCount: number;
