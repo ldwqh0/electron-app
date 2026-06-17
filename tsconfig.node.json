@@ -12,6 +12,17 @@
     "composite": true,
     "types": [
       "electron-vite/node"
-    ]
+    ],
+    "paths": {
+      "@/types": [
+        "./src/types"
+      ],
+      "@/types/*": [
+        "./src/types/*"
+      ],
+      "@/*": [
+        "./src/main/*"
+      ]
+    }
   }
 }

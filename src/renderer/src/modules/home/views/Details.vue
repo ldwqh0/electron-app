@@ -11,8 +11,7 @@
       <el-table-column label="数据项" prop="data" />
       <el-table-column label="状态" prop="running">
         <template #default="{row}">
-          running:{{ row.running }},succeed:{{ row.succeed }}
-          <el-tag v-if="row.running" type="success">运行中</el-tag>
+          <el-tag v-if="row.running" type="warning">运行中</el-tag>
           <template v-else>
             <el-tag v-if="row.succeed" type="success">成功</el-tag>
             <el-tag v-else-if="row.succeed===false" type="danger">失败</el-tag>
@@ -30,12 +29,11 @@
   </el-page-header>
 </template>
 <script lang="ts" setup>
-
   import winApi from '@/http/winApi'
   import { computed, reactive } from 'vue'
   import { EleDatatables } from '@/components'
   import { useRouter } from 'vue-router'
-  import { SyncTaskData } from '../../../../../types'
+  import { SyncTaskData } from '@/types'
 
   const router = useRouter()
 
@@ -60,7 +58,7 @@
     console.log(data)
   }
 
-  winApi.get('sync-task/findById', { params: { id: props.taskId } }).then(response => {
+  winApi.post('sync-task/findById', props.taskId).then(response => {
     state.task = response.data
   })
 

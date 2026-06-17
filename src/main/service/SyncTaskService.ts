@@ -1,26 +1,51 @@
-import { db } from '../database'
-import type { RangePagedModel, SyncTask } from '../../types'
+import { db } from '@/database'
+import type { PageableParam, RangePagedModel, SyncTask } from '@/types'
 import { isEmpty } from 'lodash-es'
 import type { SQLInputValue, SQLOutputValue } from 'node:sqlite'
-import { PageableParam } from '../../types/PageableParam'
 
 const initStmt = db.prepare(`
   UPDATE sync_task_ SET running = 0 WHERE running = 1
 `)
 
-const resetTaskStmt = db.prepare(`
-  UPDATE sync_task_data SET running = 0 WHERE running = 1 and task_id=@taskId
+const resetTaskDataStmt = db.prepare(`
+  UPDATE sync_task_data SET running = 0 WHERE running = 1 and task_id = ?
 `)
+
+const resetTaskStmt = db.prepare(`
+  UPDATE sync_task_
+  SET running = 0
+  WHERE running = 1 AND id = ?
+`)
+
+const countTaskStmt = db.prepare(
+  `
+  UPDATE sync_task_
+  SET (succeed_count, fail_count) = (
+        SELECT 
+          COUNT(CASE WHEN succeed = 1 THEN 1 END),
+          COUNT(CASE WHEN succeed = 0 THEN 1 END)
+        FROM sync_task_data 
+        WHERE task_id = @id
+      ),
+      last_modified_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      version = version + 1
+  WHERE id = @id;
+  `
+)
 
 const completeStmt = db.prepare(`
   UPDATE sync_task_
-  SET succeed_count = (SELECT COUNT(1) FROM sync_task_data WHERE task_id = @id AND succeed = 1),
-      fail_count = (SELECT COUNT(1) FROM sync_task_data WHERE task_id = @id AND succeed = 0),
-      running = 0,
-      last_modified_at = CURRENT_TIMESTAMP,
+  SET completed_time = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      last_modified_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
       version = version + 1
-  WHERE id = @id`
-)
+  WHERE id = ? 
+  AND NOT EXISTS (
+    SELECT 1 
+    FROM sync_task_data d
+    WHERE d.task_id = sync_task_.id
+      AND d.succeed IS NULL
+  )
+`)
 
 // 预编译 SQL 语句
 const insertStmt = db.prepare(`
@@ -39,7 +64,7 @@ const updateStmt = db.prepare(`
       fail_count = @failCount,
       ready = @ready,
       running = @running,
-      last_modified_at = CURRENT_TIMESTAMP,
+      last_modified_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
       version = version + 1
   WHERE id = @id AND version = @version
 `)
@@ -74,7 +99,7 @@ function fromDbFormat (row: Record<string, SQLOutputValue>): SyncTask {
     id: row.id as number,
     dataName: row.data_name as string,
     startTime: new Date(row.start_time as string),
-    completedTime: row.completed_time == null ? null : new Date(row.completedTime as string),
+    completedTime: row.completed_time == null ? null : new Date(row.completed_time as string),
     exception: row.exception as string | null,
     succeedCount: row.succeed_count as number,
     failCount: row.fail_count as number,
@@ -122,7 +147,7 @@ async function update (id: number, data: SyncTask): Promise<SyncTask> {
  * @param id 任务 id
  * @returns 同步任务数据
  */
-async function findById ({ id }: { id: number | string }): Promise<SyncTask | null> {
+async function findById (id: number | string): Promise<SyncTask | null> {
   const row = selectStmt.get(Number(id))
   if (!row) return null
   return fromDbFormat(row)
@@ -183,10 +208,17 @@ async function remove (id: number): Promise<boolean> {
 async function completeTask (id: number): Promise<SyncTask | null> {
   db.exec('BEGIN TRANSACTION')
   try {
-    resetTaskStmt.run({ taskId: id })
-    const { changes } = completeStmt.run({ id })
+    resetTaskDataStmt.run(id)
+    resetTaskStmt.run(id)
+    completeStmt.run(id)
+    countTaskStmt.run({ id })
     db.exec('COMMIT')
-    return changes > 0 ? fromDbFormat(selectStmt.get(id)!) : null
+    const newRow = selectStmt.get(id)
+    if (newRow) {
+      return fromDbFormat(newRow)
+    } else {
+      return null
+    }
   } catch (error) {
     db.exec('ROLLBACK')
     throw error

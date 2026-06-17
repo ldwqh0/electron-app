@@ -26,32 +26,37 @@
           </router-link>
         </template>
       </el-table-column>
-      <el-table-column label="开始时间" prop="startTime" />
-      <el-table-column label="完成时间" prop="completedTime" />
+      <el-table-column :formatter="dateFormatter()" label="开始时间" prop="startTime" />
+      <el-table-column :formatter="dateTimeFormatter()" label="完成时间" prop="completedTime" />
       <el-table-column label="成功数量" prop="succeedCount" />
       <el-table-column label="失败数量" prop="failCount" />
       <el-table-column label="状态">
         <template #default="{row}">
-          <span v-if="row.running">运行中</span>
-          <span v-else-if="row.ready">就绪</span>
-          <span v-else-if="row.completed">已完成</span>
-          <span v-else-if="!row.ready">未开始</span>
+          <span v-if="row.completedTime">已完成</span>
+          <template v-else>
+            <span v-if="row.running">运行中</span>
+            <template v-else>
+              <span v-if="row.ready">就绪</span>
+              <span v-else-if="!row.ready">未开始</span>
+            </template>
+          </template>
         </template>
       </el-table-column>
-      <el-table-column label="操作">
+      <el-table-column label="操作" width="120">
         <template #default="{row}">
-          <el-button :disabled="row.running || row.completedTime"
-                     text
-                     type="primary"
-                     @click="execute(row)">
-            执行
-          </el-button>
-
-          <el-button :disabled="!row.running"
+          <el-button v-if="row.running"
+                     :disabled="!row.running"
                      text
                      type="primary"
                      @click="stop(row)">
             停止
+          </el-button>
+          <el-button v-else
+                     :disabled="row.running || row.completedTime"
+                     text
+                     type="primary"
+                     @click="execute(row)">
+            执行
           </el-button>
         </template>
       </el-table-column>
@@ -80,9 +85,12 @@
   /* eslint-disable @typescript-eslint/no-explicit-any */
   import { reactive, ref, toRaw } from 'vue'
   import { EleDatatables } from '@/components'
-  import { SyncTask } from '../../../../../types'
+  import type { SyncTask } from '@/types'
   import { ElMessage } from 'element-plus'
   import winApi from '@/http/winApi'
+  import { AxiosInstance } from 'axios'
+  import dateFormatter from '@/components/EleDatatables/dateFormatter'
+  import dateTimeFormatter from '@/components/EleDatatables/dateTimeFormatter'
 
   const state = reactive<{
     serverParams: {
@@ -99,19 +107,32 @@
     current: null,
     loading: false
   })
-  const http = window.api
+  const http = window.api as AxiosInstance
   const dataTable = ref<InstanceType<typeof EleDatatables> | null>(null)
 
   async function newTask () {
     state.taskDialogVisible = true
     state.current = {
+      completedTime: null,
+      createdTime: new Date(),
+      datas: undefined,
+      exception: null,
+      failCount: 0,
+      id: 0,
+      lastModifiedTime: new Date(),
+      ready: false,
+      running: false,
+      startTime: new Date(),
+      succeedCount: 0,
+      version: 0,
       dataName: '凭证同步任务'
     }
   }
 
   async function execute (row: SyncTask) {
     try {
-      await winApi.post('task-executor/execute', { id: row.id })
+      const rsp = await winApi.post('task-executor/execute', row.id)
+      console.log(rsp)
       dataTable.value?.reloadData()
     } catch (error: any) {
       console.error(error)

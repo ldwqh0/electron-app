@@ -1,4 +1,4 @@
-import TaskQueue from '../queue'
+import TaskQueue from '@/queue'
 
 let i = 0
 

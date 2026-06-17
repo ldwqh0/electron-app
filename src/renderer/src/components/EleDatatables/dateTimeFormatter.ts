@@ -9,7 +9,7 @@ import dayjs from 'dayjs'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export default function (pattern = 'YYYY-MM-DD HH:mm:ss'): (row: any, column: TableColumnCtx, cellValue: any, index: number) => VNode | string {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (row: any, column: TableColumnCtx, cellValue: any): string => {
+  return (_row: any, _column: TableColumnCtx, cellValue: any): string => {
     if (!cellValue) {
       return ''
     }

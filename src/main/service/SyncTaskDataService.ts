@@ -1,8 +1,6 @@
-import { RangePagedModel, SyncTaskData } from '../../types'
-import { PageableParam } from '../../types/PageableParam'
-import { db } from '../database'
+import { PageableParam, RangePagedModel, SyncTaskData } from '@/types'
+import { db } from '@/database'
 import { SQLInputValue, SQLOutputValue } from 'node:sqlite'
-import log from 'electron-log'
 
 const initStmt = db.prepare(`
   UPDATE sync_task_data
@@ -18,16 +16,16 @@ const insertStatement = db.prepare(`
 insertStatement.setAllowUnknownNamedParameters(true)
 
 const selectNewStmt = db.prepare(`
-      SELECT id, task_id, data, succeed, exception, running, version, created_at, last_modified_at
+      SELECT *
       FROM sync_task_data
-      WHERE running = 0 AND succeed IS NULL AND task_id = @taskId
+      WHERE running = 0 AND succeed IS NULL AND task_id = ?
       LIMIT 1
     `)
 
 const selectStmt = db.prepare(`
       SELECT id, task_id, data, succeed, exception, running, version, created_at, last_modified_at
       FROM sync_task_data
-      WHERE id = @id
+      WHERE id = ?
     `)
 
 const updateStmt = db.prepare(`
@@ -37,7 +35,7 @@ const updateStmt = db.prepare(`
       exception = @exception,
       running = @running,
       version = version + 1,
-      last_modified_at = CURRENT_TIMESTAMP 
+      last_modified_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) 
       WHERE id = @id AND version = @version 
     `)
 updateStmt.setAllowUnknownNamedParameters(true)
@@ -94,7 +92,7 @@ async function saveAll (data: SyncTaskData[]): Promise<SyncTaskData[]> {
 }
 
 function findById (id: number): SyncTaskData | null {
-  const row = selectStmt.get({ id })
+  const row = selectStmt.get(id)
   return row ? fromDb(row) : null
 }
 
@@ -104,7 +102,7 @@ async function getNext (taskId: number): Promise<SyncTaskData | null> {
   try {
     // 查询待处理的任务
     // 找到一条 running = false，并且 succeeded is null 的记录
-    const row = selectNewStmt.get({ taskId }) as Record<string, SQLOutputValue>
+    const row = selectNewStmt.get(taskId) as Record<string, SQLOutputValue>
     if (!row) {
       db.exec('ROLLBACK')
       return null
@@ -113,13 +111,12 @@ async function getNext (taskId: number): Promise<SyncTaskData | null> {
     // 修改为 running = true
     data.running = true
     const result = updateStmt.run({ id: data.id!, ...toDb(data) })
-    log.info('update changes', result)
     if (result.changes === 0) {
       throw new Error('Failed to update task data')
     } else {
       db.exec('COMMIT')
     }
-    return fromDb(selectStmt.get({ id: row.id }) as Record<string, SQLOutputValue>)
+    return fromDb(selectStmt.get(row.id) as Record<string, SQLOutputValue>)
   } catch (error) {
     db.exec('ROLLBACK')
     throw error

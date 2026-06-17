@@ -26,8 +26,8 @@ db.exec(`
       ready INTEGER DEFAULT 0,
       running INTEGER DEFAULT 0,
       version INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      last_modified_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      last_modified_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     )
   `)
 
@@ -40,8 +40,8 @@ db.exec(`
       exception TEXT DEFAULT NULL,
       running INTEGER DEFAULT 0,
       version INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      last_modified_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      last_modified_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     )
   `)
 
