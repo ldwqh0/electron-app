@@ -1,6 +1,6 @@
 <template>
   <div v-loading="state.loading" class="home-container">
-    <el-form style="display: flex;justify-content: space-between;">
+    <el-form ref="searchForm" style="display: flex;justify-content: space-between;">
       <div style="display: flex; gap: 8px;">
         <el-form-item label="">
           <el-input v-model="state.serverParams.keyword"
@@ -16,6 +16,7 @@
     </el-form>
     <ele-datatables ref="dataTable"
                     :http="http"
+                    :max-height="tableHeight"
                     :server-params="state.serverParams"
                     ajax="sync-task/findAll"
                     class="table-container">
@@ -98,7 +99,7 @@
 </template>
 
 <script lang="ts" setup>
-  import { reactive, toRaw, useTemplateRef } from 'vue'
+  import { computed, reactive, toRaw, useTemplateRef } from 'vue'
   import { EleDatatables } from '@/components'
   import type { SyncTask } from '@/types'
   import { ElMessage } from 'element-plus'
@@ -106,6 +107,7 @@
   import { AxiosInstance } from 'axios'
   import dateFormatter from '@/components/EleDatatables/dateFormatter'
   import dateTimeFormatter from '@/components/EleDatatables/dateTimeFormatter'
+  import useAppStore from '@/store'
 
   const state = reactive<{
     serverParams: {
@@ -125,6 +127,16 @@
   const http = window.api as AxiosInstance
   const dataTable = useTemplateRef('dataTable')
   const taskForm = useTemplateRef('taskForm')
+
+  const searchForm = useTemplateRef('searchForm')
+  const appStore = useAppStore()
+
+  // 计算表格高度
+  const tableHeight = computed(() => {
+    // eslint-disable-next-line
+    const searchFormHeight = (searchForm.value as any)?.$el?.offsetHeight ?? 0
+    return appStore.height - searchFormHeight - 60
+  })
 
   // 表单校验规则
   const taskRules = {
@@ -166,21 +178,27 @@
 
   async function execute (row: SyncTask) {
     try {
+      state.loading = true
       await winApi.post('task-executor/execute', row.id)
       dataTable.value?.reloadData()
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : '未知错误'
       ElMessage.error('执行任务异常: ' + message)
+    } finally {
+      state.loading = true
     }
   }
 
   async function stop (row: SyncTask) {
     try {
+      state.loading = true
       await winApi.post('task-executor/stop', row.id)
       dataTable.value?.reloadData()
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : '未知错误'
       ElMessage.error('停止任务异常: ' + message)
+    } finally {
+      state.loading = false
     }
   }
 
@@ -189,6 +207,7 @@
       // 表单校验
       if (!taskForm.value) return
       await taskForm.value.validate()
+      state.loading = true
       const result = await winApi.post('sync-task/save', toRaw(state.current))
       if (result.status === 200) {
         ElMessage.success({ message: '任务保存成功！' })
@@ -202,6 +221,8 @@
       }
       const message = error instanceof Error ? error.message : '未知错误'
       ElMessage.error('保存任务异常: ' + message)
+    } finally {
+      state.loading = false
     }
   }
 
@@ -210,6 +231,8 @@
 <style lang="less" scoped>
   .home-container {
     width: 100%;
+    height: 100%;
+    box-sizing: border-box;
     padding: 20px;
   }
 </style>

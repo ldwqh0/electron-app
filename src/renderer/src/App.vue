@@ -17,7 +17,8 @@
 </template>
 <script lang="ts" setup>
   import zhCn from 'element-plus/es/locale/lang/zh-cn'
-  import { computed } from 'vue'
+  import { computed, onMounted, onUnmounted } from 'vue'
+  import useAppStore from '@/store'
 
   const hasError = computed(() => {
     return false
@@ -31,6 +32,32 @@
 
   const routing = computed(() => {
     return false
+  })
+
+  // 监听窗口尺寸变化
+  const appStore = useAppStore()
+  let resizeObserver: ResizeObserver | null = null
+
+  onMounted(() => {
+    const appElement = document.getElementById('app')
+    if (appElement) {
+      // 初始化尺寸
+      appStore.setDimensions(appElement.clientWidth, appElement.clientHeight)
+      // 使用 ResizeObserver 监听尺寸变化
+      resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const { width, height } = entry.contentRect
+          appStore.setDimensions(width, height)
+        }
+      })
+      resizeObserver.observe(appElement)
+    }
+  })
+
+  onUnmounted(() => {
+    if (resizeObserver) {
+      resizeObserver.disconnect()
+    }
   })
 
 </script>

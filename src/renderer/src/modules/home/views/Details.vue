@@ -1,9 +1,15 @@
 <template>
-  <el-page-header class="details-container" @back="toHome">
+  <el-page-header v-loading="state.loading"
+                  class="details-container"
+                  style="height: 100%;"
+                  @back="toHome">
     <template #content>
       <span>任务详情</span>
     </template>
-    <el-form :model="state.task" inline style="margin-top: 10px">
+    <el-form ref="searchForm"
+             :model="state.task"
+             inline
+             style="margin-top: 10px">
       <el-form-item label="任务ID">
         {{ state.task?.id }}
       </el-form-item>
@@ -30,7 +36,10 @@
         </template>
       </el-form-item>
     </el-form>
-    <ele-datatables :http="http" :server-params="serverParams" ajax="sync-task-data/findAll">
+    <ele-datatables :http="http"
+                    :max-height="tableHeight"
+                    :server-params="serverParams"
+                    ajax="sync-task-data/findAll">
       <el-table-column label="ID" prop="id" />
       <el-table-column label="数据项" prop="data" width="300">
         <template #default="{row}">
@@ -77,12 +86,16 @@
 </template>
 <script lang="ts" setup>
   import winApi from '@/http/winApi'
-  import { computed, reactive } from 'vue'
+  import { computed, reactive, useTemplateRef } from 'vue'
   import { EleDatatables } from '@/components'
   import { useRouter } from 'vue-router'
   import { SyncTask, SyncTaskData } from '@/types'
   import dateTimeFormatter from '@/components/EleDatatables/dateTimeFormatter'
   import dayjs from 'dayjs'
+  import useAppStore from '@/store'
+
+  const searchForm = useTemplateRef('searchForm')
+  const appStore = useAppStore()
 
   const router = useRouter()
 
@@ -102,7 +115,8 @@
       visible: boolean,
       content: string
     },
-    task: SyncTask
+    task: SyncTask,
+    loading: boolean
   }>({
     dataDialog: {
       visible: false,
@@ -123,7 +137,15 @@
       createdTime: new Date(),
       lastModifiedTime: new Date(),
       note: ''
-    }
+    },
+    loading: false
+  })
+
+  // 计算表格高度
+  const tableHeight = computed(() => {
+    // eslint-disable-next-line
+    const searchFormHeight = (searchForm.value as any)?.$el?.offsetHeight ?? 0
+    return appStore.height - searchFormHeight - 160
   })
 
   const timeStr = computed(() => {
@@ -135,8 +157,12 @@
   }
 
   async function execute (data: SyncTaskData) {
-    const r = await winApi.post('task-executor/executeItem', data.id)
-    console.log(r)
+    try {
+      state.loading = true
+      await winApi.post('task-executor/executeItem', data.id)
+    } finally {
+      state.loading = false
+    }
   }
 
   function showData (data: string) {
@@ -151,9 +177,17 @@
     return data.substring(0, 20) + '...'
   }
 
-  winApi.post('sync-task/findById', props.taskId).then(response => {
-    state.task = response.data
-  })
+  async function loadData () {
+    try {
+      state.loading = true
+      const { data } = await winApi.post('sync-task/findById', props.taskId)
+      state.task = data
+    } finally {
+      state.loading = false
+    }
+  }
+
+  loadData().then(() => {})
 
 </script>
 
