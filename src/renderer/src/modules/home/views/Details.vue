@@ -77,7 +77,7 @@
 
     <!-- 数据详情对话框 -->
     <el-dialog v-model="state.dataDialog.visible" title="数据详情" width="50%">
-      <pre>{{ state.dataDialog.content }}</pre>
+      <div>{{ state.dataDialog.content }}</div>
       <template #footer>
         <el-button @click="state.dataDialog.visible = false">关闭</el-button>
       </template>

@@ -3,62 +3,123 @@ import SyncTaskDataService from './SyncTaskDataService'
 import TaskQueue from '@/queue'
 import type { SyncTask, SyncTaskData } from '@/types'
 import log from 'electron-log'
+import appState from '@/AppState'
+import AppConfigService from '@/service/AppConfigService'
+import kingRequest from '../kingstar/request'
+import { KingPageData, KingResponse, Voucher } from '@/kingstar/model'
 
 const executors: Map<number, TaskQueue<SyncTaskData>> = new Map()
 
-function fetchData (task: SyncTask): Promise<SyncTaskData[]> {
-  return new Promise<SyncTaskData[]>((resolve) => {
-    setTimeout(async () => {
-      const data: SyncTaskData[] = []
-      for (let i = 0; i < 100; i++) {
-        data.push({
-          taskId: task.id as number,
-          data: `${i}`,
-          succeed: null,
-          exception: '',
-          running: false,
-          version: 0,
-          createdTime: new Date(),
-          lastModifiedTime: new Date()
-        })
-      }
-      await SyncTaskDataService.saveAll(data)
-      resolve(data)
-    }, 3000)
+async function fetchData (task: SyncTask): Promise<SyncTaskData[]> {
+  const {
+    kingClientId,
+    kingClientSecret,
+    kingOuterInstanceId,
+    kingAccountId
+  } = await AppConfigService.get()
+
+  const client = {
+    clientId: kingClientId,
+    clientSecret: kingClientSecret,
+    outerInstanceId: kingOuterInstanceId,
+    accountId: kingAccountId
+  }
+
+  const allRows: Array<{ id: number }> = []
+  let currentPage = 1
+  let hasMoreData = true
+  while (hasMoreData) {
+    const response = await kingRequest<KingResponse<KingPageData<{ id: number }>>>(client, {
+      method: 'GET',
+      url: `https://api.kingdee.com/jdy/v2/fi/voucher?page=${currentPage}&page_size=100`
+    })
+    const currentRows = response.data.rows || []
+    allRows.push(...currentRows)
+    // 如果返回的数据少于预期，说明已经是最后一页
+    hasMoreData = currentRows.length > 0
+    currentPage++
+  }
+
+  const datas = allRows.map(item => {
+    return {
+      taskId: task.id as number,
+      data: JSON.stringify(item),
+      succeed: null,
+      exception: '',
+      running: false,
+      version: 0,
+      createdTime: new Date(),
+      lastModifiedTime: new Date()
+    }
   })
+  return await SyncTaskDataService.saveAll(datas)
 }
 
 // 定义任务消费者函数
 async function saveToRemote (taskData: SyncTaskData): Promise<void> {
-  return new Promise((resolve, reject) => setTimeout(() => {
-    if (Number(taskData.data) % 4 === 0) {
-      log.info('save to remote success', taskData)
-      taskData.succeed = false
-      taskData.running = false
-      taskData.exception = '数据模拟错误'
-      SyncTaskDataService.update(taskData.id!, taskData)
-      reject(new Error('数据模拟错误'))
-    } else {
-      taskData.succeed = true
-      taskData.running = false
-      SyncTaskDataService.update(taskData.id!, taskData)
-      resolve()
-    }
-  }, 100))
-}
+  try {
+    const {
+      kingClientId,
+      kingClientSecret,
+      kingOuterInstanceId,
+      kingAccountId
+    } = await AppConfigService.get()
 
-async function executeItem (id: number): Promise<void> {
-  const r = SyncTaskDataService.findById(id)
-  if (r != null) {
-    return saveToRemote(r)
-  } else {
-    return Promise.reject(new Error('Task not found'))
+    const client = {
+      clientId: kingClientId,
+      clientSecret: kingClientSecret,
+      outerInstanceId: kingOuterInstanceId,
+      accountId: kingAccountId
+    }
+    const { id } = JSON.parse(taskData.data)
+
+    const response = await kingRequest<KingResponse<Voucher>>(client, {
+      method: 'GET',
+      url: `https://api.kingdee.com/jdy/v2/fi/voucher_detail?id=${id}`
+    })
+
+    const voucher = response.data
+
+    const cashFlowItems = voucher.entry_list.map(item => {
+      // 根据借贷方向判断收支类型：1=借方 ，-1=贷方
+      // 监管平台 收支类型：1=支出，2=收入 一般情况你贷方金额就是支出，借方金额就是收入吧
+      // 借方记收入，贷方记录支出
+      const amtType = item.dc === '1' ? 2 : 1
+      return {
+        doc_no: `${item.id}`, // 单据编号（使用凭证ID）
+        exec_date: voucher.date, // 收付日期/业务发生日期（使用凭证日期）
+        apply_date: voucher.date, // 申请日期（使用凭证日期）
+        amount: item.amount_for, // 交易金额（本位币金额）
+        amt_type: amtType, // 收支类型：1=支出(借方)，2=收入(贷方)
+        debit_acct: item.account_number, // 科目代码
+        debit_name: item.account_name, // 科目名称
+        debit_amt: item.debit_amount, // 借方金额
+        credit_amt: item.credit_amount, // 贷方金额
+        reason: item.explanation, // 备注
+        voucher_no: voucher.number, // 凭证号
+        direction: ''// 借贷方向
+      }
+    })
+
+    cashFlowItems.forEach(v => {
+      log.info(`save voucher item [${JSON.stringify(v)}]`, v)
+    })
+
+    taskData.succeed = true
+    taskData.running = false
+    await SyncTaskDataService.update(taskData.id!, taskData)
+  } catch (e) {
+    log.error('save to remote failed', taskData)
+    taskData.succeed = false
+    taskData.running = false
+    taskData.exception = e?.message ?? '未知错误'
+    await SyncTaskDataService.update(taskData.id!, taskData)
   }
 }
 
 async function execute (id: number): Promise<SyncTask | null> {
   // 查询任务
-  log.info('execute task', id)
+  log.info(`execute task [${id}]`)
 
   let task = await SyncTaskService.findById(id)
   if (!task) {
@@ -110,6 +171,7 @@ async function stop (id: number) {
 function onComplete (id: number): () => Promise<void> {
   return async () => {
     executors.delete(id)
+    appState.mainWindow?.webContents?.send('task-completed', id)
     await SyncTaskService.completeTask(id)
   }
 }
@@ -129,6 +191,5 @@ async function processAllTaskData (id: number, queue: TaskQueue<SyncTaskData>): 
 
 export default {
   execute,
-  stop,
-  executeItem
+  stop
 }

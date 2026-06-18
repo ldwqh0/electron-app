@@ -47,14 +47,13 @@ db.exec(`
     )
   `)
 
-/**
- * 初始化数据库
- * 创建所有需要的表
- */
+db.exec(`
+    CREATE TABLE IF NOT EXISTS config (
+      id TEXT PRIMARY KEY,
+      data TEXT
+    )
+  `)
 
-/**
- * 配置数据库选项
- */
 function configureDatabase (): void {
   // 设置 WAL 模式以提高性能和可靠性
   db.exec('PRAGMA journal_mode = WAL')

@@ -27,12 +27,21 @@
           </router-link>
         </template>
       </el-table-column>
-      <el-table-column :formatter="dateFormatter()" label="开始时间" prop="startTime" />
-      <el-table-column :formatter="dateFormatter()" label="结束日期" prop="endTime" />
-      <el-table-column :formatter="dateTimeFormatter()" label="完成时间" prop="completedTime" />
-      <el-table-column label="成功数量" prop="succeedCount" />
-      <el-table-column label="失败数量" prop="failCount" />
-      <el-table-column label="状态">
+      <el-table-column :formatter="dateFormatter()"
+                       label="开始时间"
+                       prop="startTime"
+                       width="140" />
+      <el-table-column :formatter="dateFormatter()"
+                       label="结束日期"
+                       prop="endTime"
+                       width="140" />
+      <el-table-column :formatter="dateTimeFormatter()"
+                       label="完成时间"
+                       prop="completedTime"
+                       width="180" />
+      <el-table-column label="成功数量" prop="succeedCount" width="80" />
+      <el-table-column label="失败数量" prop="failCount" width="80" />
+      <el-table-column label="状态" width="80">
         <template #default="{row}">
           <span v-if="row.completedTime">已完成</span>
           <template v-else>
@@ -99,7 +108,7 @@
 </template>
 
 <script lang="ts" setup>
-  import { computed, reactive, toRaw, useTemplateRef } from 'vue'
+  import { computed, onMounted, reactive, toRaw, useTemplateRef } from 'vue'
   import { EleDatatables } from '@/components'
   import type { SyncTask } from '@/types'
   import { ElMessage } from 'element-plus'
@@ -108,6 +117,7 @@
   import dateFormatter from '@/components/EleDatatables/dateFormatter'
   import dateTimeFormatter from '@/components/EleDatatables/dateTimeFormatter'
   import useAppStore from '@/store'
+  import { IpcRendererEvent } from 'electron'
 
   const state = reactive<{
     serverParams: {
@@ -130,6 +140,8 @@
 
   const searchForm = useTemplateRef('searchForm')
   const appStore = useAppStore()
+
+  let cancelEvent: (() => void) = () => {}
 
   // 计算表格高度
   const tableHeight = computed(() => {
@@ -225,6 +237,20 @@
       state.loading = false
     }
   }
+
+  function onTaskCompleted (_: IpcRendererEvent, ..._data: number[]) {
+    dataTable.value?.reloadData()
+  }
+
+  onMounted(() => {
+    cancelEvent = window.electron.ipcRenderer.on('task-completed', onTaskCompleted)
+  })
+
+  onMounted(() => {
+    if (cancelEvent) {
+      cancelEvent()
+    }
+  })
 
 </script>
 

@@ -7,5 +7,10 @@ declare global {
     api: {
       request<T = any, R = AxiosResponse<T>, D = any> (option: AxiosRequestConfig<D>): Promise<R>
     }
+    appEvent: {
+      on: (channel: string, func: (...args: any[]) => void) => void
+      of: (channel: string, func?: (...args: any[]) => void) => void
+      emit: (channel: string, ...args: any[]) => void
+    }
   }
 }

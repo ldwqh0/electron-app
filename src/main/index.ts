@@ -9,6 +9,9 @@ import TaskExecuteService from './service/TaskExecuteService'
 import SyncTaskDataService from './service/SyncTaskDataService'
 import DataService from './service/DataService'
 import log from 'electron-log'
+import appState from '@/AppState'
+import { trayManager } from './tray/TrayManager'
+import AppConfigService from '@/service/AppConfigService'
 
 function createWindow () {
   // Create the browser window.
@@ -68,6 +71,7 @@ function createWindow () {
       }
     })
   }
+  appState.mainWindow = mainWindow
 }
 
 // This method will be called when Electron has finished
@@ -85,6 +89,10 @@ app.whenReady().then(() => {
   })
   createWindow()
 
+  // 创建系统托盘
+  trayManager.createTray()
+  log.info('System tray created')
+
   // 配置数据库（WAL 模式等）
   // 自动注册 SyncTaskService 的所有方法为 IPC 处理器
   // 会注册: sync-task:save, sync-task:update, sync-task:findById,
@@ -96,6 +104,7 @@ app.whenReady().then(() => {
   registerServiceAsIpc(SyncTaskService, 'sync-task')
   registerServiceAsIpc(TaskExecuteService, 'task-executor')
   registerServiceAsIpc(SyncTaskDataService, 'sync-task-data')
+  registerServiceAsIpc(AppConfigService, 'app-config')
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
     // dock icon is clicked and there are no other windows open.
@@ -112,9 +121,11 @@ app.on('window-all-closed', () => {
   }
 })
 
-// 应用退出前关闭数据库连接
+// 应用退出前关闭数据库连接并销毁托盘
 app.on('will-quit', () => {
   closeDatabase()
+  trayManager.destroy()
+  log.info('System tray destroyed')
 })
 
 // In this file you can include the rest of your app's specific main process
