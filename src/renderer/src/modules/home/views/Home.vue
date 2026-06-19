@@ -19,7 +19,8 @@
                     :max-height="tableHeight"
                     :server-params="state.serverParams"
                     ajax="sync-task/findAll"
-                    class="table-container">
+                    class="table-container"
+                    @data-change="setData">
       <el-table-column label="任务名称" prop="dataName">
         <template #default="{row}">
           <router-link :to="`/${row.id}`">
@@ -55,20 +56,24 @@
       </el-table-column>
       <el-table-column label="操作" width="120">
         <template #default="{row}">
-          <el-button v-if="row.running"
-                     :disabled="!row.running"
-                     text
-                     type="primary"
-                     @click="stop(row)">
+          <el-link v-if="row.running"
+                   :disabled="!row.running"
+                   type="warning"
+                   @click="stop(row)">
             停止
-          </el-button>
-          <el-button v-else
-                     :disabled="row.running || row.completedTime"
-                     text
-                     type="primary"
-                     @click="execute(row)">
-            执行
-          </el-button>
+          </el-link>
+          <el-link v-else
+                   :disabled="row.running || row.completedTime != null"
+                   type="primary"
+                   @click="execute(row)">
+            启动
+          </el-link>
+          &nbsp;
+          <el-link :disabled="row.running"
+                   type="danger"
+                   @click="remove(row)">
+            删除
+          </el-link>
         </template>
       </el-table-column>
     </ele-datatables>
@@ -111,13 +116,12 @@
   import { computed, onMounted, onUnmounted, reactive, toRaw, useTemplateRef } from 'vue'
   import { EleDatatables } from '@/components'
   import type { SyncTask } from '@/types'
-  import { ElMessage } from 'element-plus'
+  import { ElMessage, ElMessageBox } from 'element-plus'
   import winApi from '@/http/winApi'
   import { AxiosInstance } from 'axios'
   import dateFormatter from '@/components/EleDatatables/dateFormatter'
   import dateTimeFormatter from '@/components/EleDatatables/dateTimeFormatter'
   import useAppStore from '@/store'
-  import { IpcRendererEvent } from 'electron'
 
   const state = reactive<{
     serverParams: {
@@ -125,11 +129,13 @@
     },
     current: SyncTask | null
     taskDialogVisible: boolean,
-    loading: boolean
+    loading: boolean,
+    datas: SyncTask[]
   }>({
     serverParams: {
       keyword: ''
     },
+    datas: [],
     taskDialogVisible: false,
     current: null,
     loading: false
@@ -137,12 +143,11 @@
   const http = window.api as AxiosInstance
   const dataTable = useTemplateRef('dataTable')
   const taskForm = useTemplateRef('taskForm')
-
   const searchForm = useTemplateRef('searchForm')
   const appStore = useAppStore()
 
-  let cancelEvent: (() => void) = () => {}
-
+  let cancelCompleteEvent: (() => void) = () => {}
+  let cancelProgressEvent: (() => void) = () => {}
   // 计算表格高度
   const tableHeight = computed(() => {
     // eslint-disable-next-line
@@ -188,6 +193,10 @@
     }
   }
 
+  function setData (datas: SyncTask[]) {
+    state.datas = datas
+  }
+
   async function execute (row: SyncTask) {
     try {
       state.loading = true
@@ -209,6 +218,31 @@
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : '未知错误'
       ElMessage.error('停止任务异常: ' + message)
+    } finally {
+      state.loading = false
+    }
+  }
+
+  async function remove (row: SyncTask) {
+    try {
+      await ElMessageBox.confirm('确定要删除该任务吗？此操作不可恢复。', '提示', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      })
+      state.loading = true
+      const result = await winApi.post('sync-task/remove', row.id)
+      if (result.status === 200) {
+        ElMessage.success({ message: '任务删除成功！' })
+        dataTable.value?.reloadData()
+      }
+    } catch (error: unknown) {
+      // 用户取消操作时不显示错误提示
+      if (error instanceof Error && error.message === 'cancel') {
+        return
+      }
+      const message = error instanceof Error ? error.message : '未知错误'
+      ElMessage.error('删除任务异常: ' + message)
     } finally {
       state.loading = false
     }
@@ -238,17 +272,24 @@
     }
   }
 
-  function onTaskCompleted (_: IpcRendererEvent, ..._data: number[]) {
-    dataTable.value?.reloadData()
+  function onTaskProgress (_: unknown, args: SyncTask) {
+    const exist = state.datas.find(it => it.id === args.id)
+    if (exist) {
+      Object.assign(exist, args)
+    }
   }
 
   onMounted(() => {
-    cancelEvent = window.electron.ipcRenderer.on('task-completed', onTaskCompleted)
+    cancelCompleteEvent = window.electron.ipcRenderer.on('task-completed', onTaskProgress)
+    cancelProgressEvent = window.electron.ipcRenderer.on('task-progress', onTaskProgress)
   })
 
   onUnmounted(() => {
-    if (cancelEvent) {
-      cancelEvent()
+    if (cancelCompleteEvent) {
+      cancelCompleteEvent()
+    }
+    if (cancelProgressEvent) {
+      cancelProgressEvent()
     }
   })
 

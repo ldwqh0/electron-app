@@ -32,14 +32,14 @@ async function fetchData (task: SyncTask): Promise<SyncTaskData[]> {
       lastModifiedTime: new Date()
     }
   })
-  return await SyncTaskDataService.saveAll(datas)
+  return SyncTaskDataService.saveAll(datas)
 }
 
 const executors: Map<number, { stopped: boolean }> = new Map()
 
 // 定义任务消费者函数
-async function saveToRemote (taskData: SyncTaskData): Promise<void> {
-  return await pRetry(async () => {
+async function saveToRemote (taskData: SyncTaskData): Promise<SyncTaskData> {
+  return pRetry(async () => {
     const { id } = JSON.parse(taskData.data)
 
     const { data } = await http.get(`https://api.kingdee.com/jdy/v2/fi/voucher_detail?id=${id}`)
@@ -74,7 +74,7 @@ async function saveToRemote (taskData: SyncTaskData): Promise<void> {
     taskData.succeed = true
     taskData.running = false
     taskData.exception = ''
-    await SyncTaskDataService.update(taskData.id!, taskData)
+    return SyncTaskDataService.update(taskData.id!, taskData)
   }, {
     retries: 3,
     minTimeout: 1000,
@@ -85,18 +85,27 @@ async function saveToRemote (taskData: SyncTaskData): Promise<void> {
         taskData.succeed = false
         taskData.running = false
         taskData.exception = error?.message ?? '未知错误'
-        await SyncTaskDataService.update(taskData.id!, taskData)
+        SyncTaskDataService.update(taskData.id!, taskData)
         log.error(`saveToRemote all ${attemptNumber} attempts failed for taskData ${taskData.id}`)
       }
     }
   })
 }
 
-async function execute (id: number): Promise<SyncTask | null> {
+async function executeItem (id: number): Promise<SyncTaskData | null> {
+  const r = SyncTaskDataService.findById(id)
+  if (r != null) {
+    return saveToRemote(r)
+  } else {
+    return Promise.reject(new Error('Task not found'))
+  }
+}
+
+function execute (id: number): SyncTask | null {
   // 查询任务
   log.info(`execute task [${id}]`)
 
-  let task = await SyncTaskService.findById(id)
+  let task = SyncTaskService.findById(id)
   if (!task) {
     throw new Error(`Task ${id} not found`)
   }
@@ -105,7 +114,7 @@ async function execute (id: number): Promise<SyncTask | null> {
     throw new Error(`Task ${id} is already running`)
   }
 
-  task = await SyncTaskService.update(id, { ...task, running: true })
+  task = SyncTaskService.update(id, { ...task, running: true })
 
   // 异步执行任务准备流程:先获取数据,再处理数据
   const prepareTask = async () => {
@@ -117,35 +126,43 @@ async function execute (id: number): Promise<SyncTask | null> {
       if (!task.ready) {
         const allRows = await fetchData(task)
         if (allRows.length <= 0) {
-          await completeTask(id)
+          completeTask(id)
           return
         }
         task.ready = true
-        await SyncTaskService.update(id, task)
+        SyncTaskService.update(id, task)
         log.info(`Task ${id} data fetched and marked as ready`)
       }
       if (taskState.stopped) {
-        await completeTask(id)
+        completeTask(id)
         return
       }
-      // 串行处理任务数据
       let processedCount = 0
+
+      // 串行处理任务数据
+
       while (!taskState.stopped) {
-        const nextData = await SyncTaskDataService.getNext(id)
+        const nextData = SyncTaskDataService.getNext(id)
         if (!nextData) {
           break // 没有更多数据，退出循环
         }
-
-        await saveToRemote(nextData)
-        processedCount++
+        try {
+          processedCount++
+          const result = await saveToRemote(nextData)
+          appState.mainWindow?.webContents?.send('task-data-progress', result)
+        } catch {
+          const result = SyncTaskDataService.findById(nextData.id!)
+          appState.mainWindow?.webContents?.send('task-data-progress', result)
+        }
 
         // 每处理10条更新一次状态
         if (processedCount % 10 === 0) {
-          await SyncTaskService.updateTaskStatus(id)
+          const result = SyncTaskService.updateTaskStatus(id)
+          appState.mainWindow?.webContents?.send('task-progress', result)
         }
       }
 
-      await completeTask(id)
+      completeTask(id)
 
       // 获取并处理所有任务数据
     } catch (error) {
@@ -161,10 +178,10 @@ async function execute (id: number): Promise<SyncTask | null> {
   return task
 }
 
-async function completeTask (taskId: number): Promise<void> {
+function completeTask (taskId: number): void {
   executors.delete(taskId)
-  appState.mainWindow?.webContents?.send('task-completed', taskId)
-  await SyncTaskService.completeTask(taskId)
+  const task = SyncTaskService.completeTask(taskId)
+  appState.mainWindow?.webContents?.send('task-completed', task)
 }
 
 async function stop (id: number) {
@@ -175,6 +192,7 @@ async function stop (id: number) {
 }
 
 export default {
+  executeItem,
   execute,
   stop
 }

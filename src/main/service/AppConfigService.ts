@@ -23,7 +23,7 @@ const state = {}
  * 将配置对象序列化为 JSON 字符串存储
  * @param config 配置对象
  */
-async function save (config: Record<string, any>): Promise<void> {
+function save (config: Record<string, any>) {
   try {
     const data = JSON.stringify(config)
     upsertStmt.run({
@@ -42,7 +42,7 @@ async function save (config: Record<string, any>): Promise<void> {
  * 从数据库获取应用配置
  * @returns 配置对象，如果不存在则返回空对象
  */
-async function get (): Promise<Record<string, any>> {
+function get (): Record<string, any> {
   if (isEmpty(state)) {
     try {
       const row = selectStmt.get(CONFIG_ID) as { data: string } | undefined
@@ -65,9 +65,7 @@ async function get (): Promise<Record<string, any>> {
   }
 }
 
-get().then(() => {
-  log.info('App config loaded successfully')
-})
+get()
 
 export default {
   save,

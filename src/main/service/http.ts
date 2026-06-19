@@ -11,13 +11,13 @@ export function createKingHttp (clientSupplier: ClientSupplier): AxiosInstance {
   return http
 }
 
-const http = createKingHttp(async () => {
+const http = createKingHttp(() => {
   const {
     kingClientId,
     kingClientSecret,
     kingOuterInstanceId,
     kingAccountId
-  } = await AppConfigService.get()
+  } = AppConfigService.get()
 
   return {
     clientId: kingClientId as string,

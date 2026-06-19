@@ -10,52 +10,63 @@
              :model="state.task"
              inline
              style="margin-top: 10px">
-      <el-form-item label="任务ID">
-        {{ state.task?.id }}
-      </el-form-item>
-      <el-form-item label="任务名称">
-        {{ state.task?.dataName }}
-      </el-form-item>
-      <el-form-item label="数据范围">
-        {{ timeStr }}
-      </el-form-item>
-      <el-form-item label="执行成功数">
-        {{ state.task?.succeedCount }}
-      </el-form-item>
-      <el-form-item label="执行失败数">
-        {{ state.task?.failCount }}
-      </el-form-item>
-      <el-form-item label="任务状态">
-        <span v-if="state.task.completedTime">已完成</span>
-        <template v-else>
-          <span v-if="state.task.running">运行中</span>
-          <template v-else>
-            <span v-if="state.task.ready">就绪</span>
-            <span v-else-if="!state.task.ready">未开始</span>
-          </template>
-        </template>
-      </el-form-item>
+      <div style="display: flex;justify-content: space-between;">
+        <div>
+          <el-form-item label="任务ID">
+            {{ state.task?.id }}
+          </el-form-item>
+          <el-form-item label="任务名称">
+            {{ state.task?.dataName }}
+          </el-form-item>
+          <el-form-item label="数据范围">
+            {{ timeStr }}
+          </el-form-item>
+          <el-form-item label="执行成功数">
+            {{ state.task?.succeedCount }}
+          </el-form-item>
+          <el-form-item label="执行失败数">
+            {{ state.task?.failCount }}
+          </el-form-item>
+          <el-form-item label="任务状态">
+            <span v-if="state.task.completedTime != null">已完成</span>
+            <template v-else>
+              <span v-if="state.task.running">运行中</span>
+              <template v-else>
+                <span v-if="state.task.ready">就绪</span>
+                <span v-else-if="!state.task.ready">未开始</span>
+              </template>
+            </template>
+          </el-form-item>
+        </div>
+        <div>
+          <el-button v-if="state.task.running"
+                     :disabled="!state.task.running"
+                     type="primary"
+                     @click="stop">
+            停止
+          </el-button>
+          <el-button v-else
+                     :disabled="state.task.running || state.task.completedTime != null"
+                     type="primary"
+                     @click="start">
+            启动
+          </el-button>
+        </div>
+      </div>
     </el-form>
-    <ele-datatables :http="http"
+    <ele-datatables ref="table"
+                    :debounce-time="1000"
+                    :http="http"
                     :max-height="tableHeight"
                     :server-params="serverParams"
-                    ajax="sync-task-data/findAll">
-      <el-table-column label="ID" prop="id" />
-      <el-table-column label="数据项" prop="data" width="300">
+                    ajax="sync-task-data/findAll"
+                    @data-change="setData">
+      <el-table-column label="ID" prop="id" width="80" />
+      <el-table-column label="数据项" prop="data">
         <template #default="{row}">
           <el-button text type="primary" @click="showData(row.data)">
             {{ truncateData(row.data) }}
           </el-button>
-        </template>
-      </el-table-column>
-      <el-table-column label="状态" prop="running">
-        <template #default="{row}">
-          <el-tag v-if="row.running" type="warning">运行中</el-tag>
-          <template v-else>
-            <el-tag v-if="row.succeed" type="success">成功</el-tag>
-            <el-tag v-else-if="row.succeed===false" type="danger">失败</el-tag>
-            <el-tag v-else>未开始</el-tag>
-          </template>
         </template>
       </el-table-column>
 
@@ -67,10 +78,24 @@
         </template>
       </el-table-column>
 
-      <el-table-column :formatter="dateTimeFormatter()" label="创建时间" prop="createdTime" />
-      <el-table-column label="操作" width="100">
+      <el-table-column label="状态" prop="running" width="80">
         <template #default="{row}">
-          <el-button text type="primary" @click="execute(row)">执行</el-button>
+          <el-tag v-if="row.running" type="warning">运行中</el-tag>
+          <template v-else>
+            <el-tag v-if="row.succeed" type="success">成功</el-tag>
+            <el-tag v-else-if="row.succeed===false" type="danger">失败</el-tag>
+            <el-tag v-else>未开始</el-tag>
+          </template>
+        </template>
+      </el-table-column>
+
+      <el-table-column :formatter="dateTimeFormatter()"
+                       label="创建时间"
+                       prop="createdTime"
+                       width="180" />
+      <el-table-column label="操作" width="80">
+        <template #default="{row}">
+          <el-link type="primary" @click="execute(row)">执行</el-link>
         </template>
       </el-table-column>
     </ele-datatables>
@@ -86,15 +111,18 @@
 </template>
 <script lang="ts" setup>
   import winApi from '@/http/winApi'
-  import { computed, reactive, useTemplateRef } from 'vue'
+  import { computed, onMounted, onUnmounted, reactive, useTemplateRef } from 'vue'
   import { EleDatatables } from '@/components'
   import { useRouter } from 'vue-router'
   import { SyncTask, SyncTaskData } from '@/types'
   import dateTimeFormatter from '@/components/EleDatatables/dateTimeFormatter'
   import dayjs from 'dayjs'
   import useAppStore from '@/store'
+  import { throttle } from 'lodash-es'
+  import { ElMessage } from 'element-plus'
 
   const searchForm = useTemplateRef('searchForm')
+  const table = useTemplateRef('table')
   const appStore = useAppStore()
 
   const router = useRouter()
@@ -105,6 +133,10 @@
     taskId: ''
   })
   const http = window.api
+
+  let cancelCompleteEvent = () => {}
+  let cancelTaskCompleteEvent = () => {}
+  let cancelTaskProgressEvent = () => {}
 
   const serverParams = computed(() => {
     return { taskId: props.taskId }
@@ -117,11 +149,13 @@
     },
     task: SyncTask,
     loading: boolean
+    datas: SyncTaskData[]
   }>({
     dataDialog: {
       visible: false,
       content: ''
     },
+    datas: [],
     task: {
       id: 0,
       dataName: '',
@@ -151,6 +185,11 @@
   const timeStr = computed(() => {
     return `${dayjs(state.task.createdTime).format('YYYY-MM-DD')} 至 ${dayjs(state.task.endTime).format('YYYY-MM-DD')}`
   })
+
+  // 节流加载函数
+  const reloadData = throttle(() => {
+    table.value.reloadData()
+  }, 1000)
 
   function toHome () {
     router.back()
@@ -186,6 +225,64 @@
       state.loading = false
     }
   }
+
+  function setData (datas: SyncTaskData[]) {
+    state.datas = datas
+  }
+
+  async function start () {
+    try {
+      state.loading = true
+      const { data } = await winApi.post('task-executor/execute', props.taskId) ?? state.task
+      state.task = data ?? state.task
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '未知错误'
+      ElMessage.error('执行任务异常: ' + message)
+    } finally {
+      state.loading = true
+    }
+  }
+
+  async function stop () {
+    try {
+      state.loading = true
+      const { data } = await winApi.post('task-executor/stop', props.taskId) ?? state.task
+      state.task = data ?? state.task
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '未知错误'
+      ElMessage.error('停止任务异常: ' + message)
+    } finally {
+      state.loading = false
+    }
+  }
+
+  function onTaskDataCompleted (_: unknown, args: SyncTaskData) {
+    // 如果state.data为空，刷新表格
+    if (state.datas.length === 0) {
+      reloadData()
+    } else {
+      const exist = state.datas.find(it => it.id === args.id)
+      if (exist) {
+        Object.assign(exist, args)
+      }
+    }
+  }
+
+  function onTaskProgress (_: unknown, args: SyncTask) {
+    Object.assign(state.task, args)
+  }
+
+  onMounted(() => {
+    cancelCompleteEvent = window.electron.ipcRenderer.on('task-data-progress', onTaskDataCompleted)
+    cancelTaskCompleteEvent = window.electron.ipcRenderer.on('task-completed', onTaskProgress)
+    cancelTaskProgressEvent = window.electron.ipcRenderer.on('task-progress', onTaskProgress)
+  })
+
+  onUnmounted(() => {
+    cancelCompleteEvent()
+    cancelTaskCompleteEvent()
+    cancelTaskProgressEvent()
+  })
 
   loadData().then(() => {})
 

@@ -73,7 +73,7 @@ function toDb (data: SyncTaskData): Record<string, SQLInputValue> {
   }
 }
 
-async function saveAll (data: SyncTaskData[]): Promise<SyncTaskData[]> {
+function saveAll (data: SyncTaskData[]): SyncTaskData[] {
   if (!data || data.length === 0) {
     return []
   }
@@ -104,7 +104,7 @@ function findById (id: number): SyncTaskData | null {
   return row ? fromDb(row) : null
 }
 
-async function getNext (taskId: number): Promise<SyncTaskData | null> {
+function getNext (taskId: number): SyncTaskData | null {
   // 在事务中查询并更新
   db.exec('BEGIN TRANSACTION')
   try {
@@ -131,9 +131,9 @@ async function getNext (taskId: number): Promise<SyncTaskData | null> {
   }
 }
 
-async function findAll (
+function findAll (
   params: PageableParam
-): Promise<RangePagedModel<SyncTaskData, number>> {
+): RangePagedModel<SyncTaskData, number> {
   const { page, size, ...filters } = params
   const countQuery = 'SELECT count(1) as count FROM sync_task_data WHERE 1=1 '
   const sql = 'SELECT *  FROM sync_task_data WHERE 1=1 '
@@ -179,13 +179,13 @@ async function findAll (
   }
 }
 
-async function update (id: number, data: SyncTaskData): Promise<SyncTaskData> {
+function update (id: number, data: SyncTaskData): SyncTaskData {
   const dbData = toDb(data)
   updateStmt.run({ ...dbData, id })
   return data
 }
 
-async function hasMoreData (taskId: number): Promise<boolean> {
+function hasMoreData (taskId: number): boolean {
   const { e } = hasMoreStmt.get(taskId) as { e: number }
   return e > 0
 }

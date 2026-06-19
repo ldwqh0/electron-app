@@ -75,6 +75,7 @@ updateStmt.setAllowUnknownNamedParameters(true)
 
 const selectStmt = db.prepare('SELECT * FROM sync_task_ WHERE id = ?')
 const deleteStmt = db.prepare('DELETE FROM sync_task_ WHERE id = ?')
+const deleteItemStmt = db.prepare('DELETE FROM sync_task_data WHERE task_id = ?')
 
 /**
  * 将 SyncTask 转换为数据库存储格式
@@ -124,7 +125,7 @@ function fromDbFormat (row: Record<string, SQLOutputValue>): SyncTask {
  * @param data 同步任务数据
  * @returns 保存后的数据（包含数据库生成的 id）
  */
-async function save (data: SyncTask): Promise<SyncTask> {
+function save (data: SyncTask): SyncTask {
   const result = insertStmt.run(toDbFormat(data))
   return {
     ...data,
@@ -138,7 +139,7 @@ async function save (data: SyncTask): Promise<SyncTask> {
  * @param data 同步任务数据（必须包含 id）
  * @returns 更新后的数据
  */
-async function update (id: number, data: SyncTask): Promise<SyncTask> {
+function update (id: number, data: SyncTask): SyncTask {
   const result = updateStmt.run({
     id,
     ...toDbFormat(data)
@@ -154,7 +155,7 @@ async function update (id: number, data: SyncTask): Promise<SyncTask> {
  * @param id 任务 id
  * @returns 同步任务数据
  */
-async function findById (id: number | string): Promise<SyncTask | null> {
+function findById (id: number | string): SyncTask | null {
   const row = selectStmt.get(Number(id))
   if (!row) return null
   return fromDbFormat(row)
@@ -165,7 +166,7 @@ async function findById (id: number | string): Promise<SyncTask | null> {
  * @param params 分页参数
  * @returns 分页数据
  */
-export async function findAll (params: PageableParam): Promise<RangePagedModel<SyncTask, number>> {
+function findAll (params: PageableParam): RangePagedModel<SyncTask, number> {
   const { page = 0, size = 10, ...filters } = params
   const countSql = 'SELECT COUNT(1) as count FROM sync_task_ WHERE 1=1'
   const selectSql = 'SELECT * FROM sync_task_ WHERE 1=1'
@@ -207,12 +208,28 @@ export async function findAll (params: PageableParam): Promise<RangePagedModel<S
  * @param id 任务 id
  * @returns 是否删除成功
  */
-async function remove (id: number): Promise<boolean> {
-  const result = deleteStmt.run(id)
-  return result.changes > 0
+function remove (id: number): boolean {
+  // 检查任务是否存在以及是否在运行中
+  const task = findById(id)
+  if (!task) {
+    throw new Error('任务不存在')
+  }
+  if (task.running) {
+    throw new Error('任务正在运行中，请先停止任务后再删除')
+  }
+  db.exec('BEGIN TRANSACTION')
+  try {
+    deleteItemStmt.run(id)
+    const result = deleteStmt.run(id)
+    db.exec('COMMIT')
+    return result.changes > 0
+  } catch (e) {
+    db.exec('ROLLBACK')
+    throw e
+  }
 }
 
-async function updateTaskStatus (id: number): Promise<SyncTask | null> {
+function updateTaskStatus (id: number): SyncTask | null {
   db.exec('BEGIN TRANSACTION')
   try {
     completeStmt.run(id)
@@ -230,7 +247,7 @@ async function updateTaskStatus (id: number): Promise<SyncTask | null> {
   }
 }
 
-async function completeTask (id: number): Promise<SyncTask | null> {
+function completeTask (id: number): SyncTask | null {
   db.exec('BEGIN TRANSACTION')
   try {
     resetTaskDataStmt.run(id)
