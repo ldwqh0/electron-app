@@ -35,7 +35,8 @@ const countTaskStmt = db.prepare(
 
 const completeStmt = db.prepare(`
   UPDATE sync_task_
-  SET completed_time = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  SET running = 0,
+      completed_time = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
       last_modified_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
       version = version + 1
   WHERE id = ? 
@@ -211,6 +212,24 @@ async function remove (id: number): Promise<boolean> {
   return result.changes > 0
 }
 
+async function updateTaskStatus (id: number): Promise<SyncTask | null> {
+  db.exec('BEGIN TRANSACTION')
+  try {
+    completeStmt.run(id)
+    countTaskStmt.run({ id })
+    db.exec('COMMIT')
+    const newRow = selectStmt.get(id)
+    if (newRow) {
+      return fromDbFormat(newRow)
+    } else {
+      return null
+    }
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+}
+
 async function completeTask (id: number): Promise<SyncTask | null> {
   db.exec('BEGIN TRANSACTION')
   try {
@@ -241,6 +260,7 @@ export default {
   findById,
   findAll,
   remove,
+  updateTaskStatus,
   completeTask,
   init
 }

@@ -28,6 +28,14 @@ const selectStmt = db.prepare(`
       WHERE id = ?
     `)
 
+const hasMoreStmt = db.prepare(`
+  SELECT EXISTS(
+    SELECT 1
+    FROM sync_task_data 
+    WHERE task_id = ? AND running = 0 AND succeed IS NULL
+  ) e
+`)
+
 const updateStmt = db.prepare(`
       UPDATE sync_task_data
       SET 
@@ -177,6 +185,11 @@ async function update (id: number, data: SyncTaskData): Promise<SyncTaskData> {
   return data
 }
 
+async function hasMoreData (taskId: number): Promise<boolean> {
+  const { e } = hasMoreStmt.get(taskId) as { e: number }
+  return e > 0
+}
+
 function init () {
   initStmt.run()
 }
@@ -187,5 +200,6 @@ export default {
   findAll,
   findById,
   update,
-  init
+  init,
+  hasMoreData
 }

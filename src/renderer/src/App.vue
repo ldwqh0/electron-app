@@ -14,7 +14,10 @@
                  element-loading-svg-view-box="-10, -10, 50, 50"
                  element-loading-text="加载中..." />
 
-    <el-dialog v-model="state.settingVisible" title="系统设置" width="400px">
+    <el-dialog v-model="state.settingVisible"
+               :before-close="onBeforeClose"
+               title="系统设置"
+               width="400px">
       <el-form ref="settingForm"
                :model="state.settings"
                :rules="state.rules"
@@ -32,7 +35,7 @@
               <el-input v-model="state.settings.kingOuterInstanceId" placeholder="请输入外部实例ID" />
             </el-form-item>
             <el-form-item label="账套ID" prop="kingAccountId">
-              <el-input v-model="state.settings.kingAccountId" placeholder="请输入外部实例ID" />
+              <el-input v-model="state.settings.kingAccountId" placeholder="请输入账套ID" />
             </el-form-item>
           </el-tab-pane>
           <el-tab-pane label="监管平台参数设置" name="2">
@@ -50,7 +53,7 @@
       </el-form>
       <template #footer>
         <el-button type="primary" @click="saveConfig">保存</el-button>
-        <el-button @click="state.settingVisible = false">取消</el-button>
+        <el-button @click="cancel">取消</el-button>
       </template>
     </el-dialog>
   </el-config-provider>
@@ -63,6 +66,7 @@
   import useAppStore from '@/store'
   import winApi from '@/http/winApi'
   import type { AppConfig } from '@/types/AppConfig'
+  import { isEmpty } from 'lodash-es'
 
   const hasError = computed(() => {
     return false
@@ -108,6 +112,10 @@
         { required: true, message: '请输入外部实例ID', trigger: 'blur' },
         { max: 100, message: '外部实例ID不能超过100个字符', trigger: 'blur' }
       ],
+      kingAccountId: [
+        { required: true, message: '请输入账套ID', trigger: 'blur' },
+        { max: 100, message: '账套ID不能超过100个字符', trigger: 'blur' }
+      ],
       targetUrl: [
         { required: true, message: '请输入监管平台地址', trigger: 'blur' },
         { max: 100, message: '平台地址不能超过100个字符', trigger: 'blur' }
@@ -130,6 +138,43 @@
   const appStore = useAppStore()
   let resizeObserver: ResizeObserver | null = null
   let cancelEvent: (() => void) | null = null
+
+  // 保存设置
+  async function saveConfig () {
+    if (!settingForm.value) return
+    try {
+      await settingForm.value.validate()
+      await winApi.post('app-config/save', toRaw(state.settings))
+      ElMessage.success('设置保存成功')
+      state.settingVisible = false
+    } catch (error: unknown) {
+      // 验证失败，不做任何操作
+    }
+  }
+
+  async function loadConfig (): Promise<AppConfig> {
+    const { data } = await winApi.post('app-config/get', {})
+    state.settings = data
+    return data
+  }
+
+  async function cancel () {
+    try {
+      await settingForm.value.validate()
+      state.settingVisible = false
+    } catch {
+      // 什么都不做
+    }
+  }
+
+  async function onBeforeClose (done: () => void) {
+    try {
+      await settingForm.value.validate()
+      done()
+    } catch {
+      // 什么都不做
+    }
+  }
 
   onMounted(() => {
     const appElement = document.getElementById('app')
@@ -161,26 +206,11 @@
     }
   })
 
-  // 保存设置
-  async function saveConfig () {
-    if (!settingForm.value) return
-    try {
-      await settingForm.value.validate()
-      await winApi.post('app-config/save', toRaw(state.settings))
-      ElMessage.success('设置保存成功')
-      state.settingVisible = false
-    } catch (error: unknown) {
-      console.error(error)
-      // 验证失败，不做任何操作
+  loadConfig().then((data) => {
+    if (isEmpty(data)) {
+      state.settingVisible = true
     }
-  }
-
-  async function loadConfig () {
-    const { data } = await winApi.post('app-config/get', {})
-    state.settings = data
-  }
-
-  loadConfig().then(() => {})
+  })
 
 </script>
 <style lang="less" scoped>

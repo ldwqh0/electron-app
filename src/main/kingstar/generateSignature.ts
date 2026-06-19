@@ -1,10 +1,9 @@
 import crypto from 'crypto'
-import type { KingRequest, Signature } from './model'
+import type { KingRequest, Signature } from './types'
 
 function parseUrl (url: string): { path: string, params: Record<string, string[]> } {
-  // const s = 'https://api.kingdee.com/jdyconnector/app_management/push_app_authorize?outerInstanceId=492475033566973952'
   const url_ = new URL(url)
-  const path = url_.pathname // /jdyconnector/app_management/push_app_authorize
+  const path = url_.pathname
   const params: Record<string, string[]> = {}
   url_.searchParams.forEach((value, key) => {
     if (params[key]) {

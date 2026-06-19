@@ -1,5 +1,5 @@
 import getAppAuthorize from './getAppAuthorize'
-import type { AppToken, Client, KingRequest, KingResponse } from './model'
+import type { AppToken, KingRequest, KingResponse } from './types'
 import generateSignature, { hmacSha256 } from './generateSignature'
 import axios from 'axios'
 
@@ -7,7 +7,12 @@ const url = 'https://api.kingdee.com/jdyconnector/app_management/kingdee_auth_to
 
 const tokenCache = new Map<string, AppToken>()
 
-export default async function (client: Client): Promise<AppToken> {
+export default async function (client: {
+  clientId: string,
+  outerInstanceId: string,
+  accountId: string,
+  clientSecret: string
+}): Promise<AppToken> {
   const { clientId, outerInstanceId, accountId, clientSecret } = client
   const tokenCacheKey = `${accountId}@${outerInstanceId}@${clientId}`
 

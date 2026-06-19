@@ -108,7 +108,7 @@
 </template>
 
 <script lang="ts" setup>
-  import { computed, onMounted, reactive, toRaw, useTemplateRef } from 'vue'
+  import { computed, onMounted, onUnmounted, reactive, toRaw, useTemplateRef } from 'vue'
   import { EleDatatables } from '@/components'
   import type { SyncTask } from '@/types'
   import { ElMessage } from 'element-plus'
@@ -246,7 +246,7 @@
     cancelEvent = window.electron.ipcRenderer.on('task-completed', onTaskCompleted)
   })
 
-  onMounted(() => {
+  onUnmounted(() => {
     if (cancelEvent) {
       cancelEvent()
     }

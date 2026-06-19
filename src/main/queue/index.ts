@@ -28,8 +28,6 @@ class TaskQueue<T> {
     return this.isStopped
   }
 
-  onComplete: () => Promise<void> = async () => {}
-
   // 添加任务到队列
   async produce (task: T): Promise<void> {
     // 检查是否已停止
@@ -78,6 +76,8 @@ class TaskQueue<T> {
     // 清空队列
     this.queue = []
   }
+
+  onComplete: () => Promise<void> = async () => {}
 
   // 消费任务
   private tryConsume (): void {

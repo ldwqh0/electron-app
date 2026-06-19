@@ -1,4 +1,4 @@
-import type { Authorize, AuthResponse, Client, KingRequest } from './model'
+import type { Authorize, AuthResponse, KingRequest } from './types'
 import generateSignature from './generateSignature'
 import axios from 'axios'
 
@@ -7,7 +7,11 @@ const url = 'https://api.kingdee.com/jdyconnector/app_management/push_app_author
 // 授权信息缓存
 const authCache = new Map<string, Authorize[]>()
 
-async function getAppAuthorize ({ clientId, clientSecret, outerInstanceId }: Client): Promise<Authorize[]> {
+async function getAppAuthorize ({ clientId, clientSecret, outerInstanceId }: {
+  clientId: string,
+  clientSecret: string,
+  outerInstanceId: string
+}): Promise<Authorize[]> {
   const cacheKey = `${outerInstanceId}@${clientId}`
   // 从缓存读取，如果没有，则从网络获取
   const cached = authCache.get(cacheKey)

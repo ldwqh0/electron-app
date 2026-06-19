@@ -1,4 +1,4 @@
-import type { Client, KingRequest } from './model'
+import type { Client, KingRequest } from './types'
 import axios from 'axios'
 import generateSignature from './generateSignature'
 import getAppToken from './getAppToken'

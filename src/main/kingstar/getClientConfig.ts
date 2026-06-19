@@ -1,4 +1,4 @@
-import { ClientKey, KingConfig } from './model'
+import { ClientKey, KingConfig } from './types'
 
 const clients: Map<string, KingConfig> = new Map()
 clients.set('492475033566973952@333940', {

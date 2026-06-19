@@ -1,4 +1,4 @@
-import type { Authorize } from './model'
+import type { Authorize } from './types'
 
 const state: {
   authorize: Authorize[]
