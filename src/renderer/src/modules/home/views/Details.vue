@@ -78,7 +78,26 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="状态" prop="running" width="80">
+      <el-table-column label="状态" prop="running" width="120">
+        <template #header>
+          <el-dropdown @command="switchState">
+            <span class="el-dropdown-link">
+              {{ stateFilterText }}
+              <el-icon>
+                <ArrowDown />
+              </el-icon>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item :command="null">全部</el-dropdown-item>
+                <el-dropdown-item command="pending">未开始</el-dropdown-item>
+                <el-dropdown-item command="running">运行中</el-dropdown-item>
+                <el-dropdown-item command="success">成功</el-dropdown-item>
+                <el-dropdown-item command="failed">失败</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </template>
         <template #default="{row}">
           <el-tag v-if="row.running" type="warning">运行中</el-tag>
           <template v-else>
@@ -138,10 +157,6 @@
   let cancelTaskCompleteEvent = () => {}
   let cancelTaskProgressEvent = () => {}
 
-  const serverParams = computed(() => {
-    return { taskId: props.taskId }
-  })
-
   const state = reactive<{
     dataDialog: {
       visible: boolean,
@@ -150,6 +165,7 @@
     task: SyncTask,
     loading: boolean
     datas: SyncTaskData[]
+    filterState: string | null
   }>({
     dataDialog: {
       visible: false,
@@ -172,7 +188,44 @@
       lastModifiedTime: new Date(),
       note: ''
     },
-    loading: false
+    loading: false,
+    filterState: null
+  })
+
+  const serverParams = computed(() => {
+    const params: { taskId: number | string; running?: boolean; succeed?: boolean } = {
+      taskId: props.taskId
+    }
+
+    // 根据筛选状态设置 running 和 succeed 参数
+    if (state.filterState === 'pending') {
+      // 未开始: running=false, succeed=null(不传)
+      params.running = false
+      params.succeed = null
+    } else if (state.filterState === 'running') {
+      // 运行中: running=true
+      params.running = true
+    } else if (state.filterState === 'success') {
+      // 成功: running=false, succeed=true
+      params.running = false
+      params.succeed = true
+    } else if (state.filterState === 'failed') {
+      // 失败: running=false, succeed=false
+      params.running = false
+      params.succeed = false
+    }
+
+    return params
+  })
+
+  const stateFilterText = computed(() => {
+    const textMap: Record<string, string> = {
+      pending: '未开始',
+      running: '运行中',
+      success: '成功',
+      failed: '失败'
+    }
+    return state.filterState ? textMap[state.filterState] || '状态' : '状态'
   })
 
   // 计算表格高度
@@ -256,8 +309,14 @@
     }
   }
 
+  function switchState (command: string | null) {
+    state.filterState = command
+    // 刷新表格数据,serverParams 会自动重新计算
+    table.value?.reloadData()
+  }
+
   function onTaskDataCompleted (_: unknown, args: SyncTaskData) {
-    // 如果state.data为空，刷新表格
+    // 如果state.data为空,刷新表格
     if (state.datas.length === 0) {
       reloadData()
     } else {

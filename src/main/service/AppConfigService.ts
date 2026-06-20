@@ -30,7 +30,7 @@ function save (config: Record<string, any>) {
       id: CONFIG_ID,
       data
     })
-    Object.assign(state, data)
+    Object.assign(state, config)
     log.info('✅ App config saved successfully')
   } catch (error) {
     log.error('❌ Error saving app config:', error)
