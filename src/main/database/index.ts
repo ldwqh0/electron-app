@@ -2,7 +2,6 @@
  * 数据库连接管理
  * 负责创建和管理 SQLite 数据库连接
  */
-
 import { DatabaseSync } from 'node:sqlite'
 import { join } from 'path'
 import { app } from 'electron'
@@ -21,10 +20,13 @@ db.exec(`
       start_time DATETIME NOT NULL,
       end_time DATETIME NOT NULL,
       completed_time DATETIME,
+      start_period TEXT NOT NULL,
+      end_period TEXT NOT NULL,
       note TEXT,
       exception TEXT,
       succeed_count INTEGER DEFAULT 0,
       fail_count INTEGER DEFAULT 0,
+      count_ INTEGER DEFAULT 0,
       ready INTEGER DEFAULT 0,
       running INTEGER DEFAULT 0,
       version INTEGER DEFAULT 0,

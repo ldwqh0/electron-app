@@ -3,9 +3,7 @@ import type { Client } from './types'
 import generateSignature from './generateSignature'
 import getAppToken from './getAppToken'
 
-type ClientSupplier = () => (Promise<Client> | Client)
-
-export default function (clientSupplier: ClientSupplier) {
+export default function (clientSupplier: () => (Promise<Client> | Client)) {
   // eslint-disable-next-line
   return async function (config: InternalAxiosRequestConfig): Promise<InternalAxiosRequestConfig<any>> {
     const clientResult = clientSupplier()

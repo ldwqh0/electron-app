@@ -2,16 +2,22 @@ import axios, { AxiosInstance } from 'axios'
 import type { Client } from '@/kingstar/types'
 import KingAxiosInterceptor from '@/kingstar/KingAxiosInterceptor'
 import AppConfigService from '@/service/AppConfigService'
+import { JClient } from '@/j/types'
+import JAxiosInterceptor from '@/j/JAxiosInterceptor'
 
-type ClientSupplier = () => (Promise<Client> | Client)
-
-export function createKingHttp (clientSupplier: ClientSupplier): AxiosInstance {
+export function createKingHttp (clientSupplier: () => (Promise<Client> | Client)): AxiosInstance {
   const http = axios.create()
   http.interceptors.request.use(KingAxiosInterceptor(clientSupplier))
   return http
 }
 
-const http = createKingHttp(() => {
+export function createJHttp (clientSupplier: () => (Promise<JClient> | JClient)): AxiosInstance {
+  const http = axios.create()
+  http.interceptors.request.use(JAxiosInterceptor(clientSupplier))
+  return http
+}
+
+const kingHttp = createKingHttp(() => {
   const {
     kingClientId,
     kingClientSecret,
@@ -26,4 +32,22 @@ const http = createKingHttp(() => {
     accountId: kingAccountId as string
   }
 })
-export default http
+
+const jHttp = createJHttp(() => {
+  const {
+    targetUrl,
+    targetAppid,
+    targetAppkey
+  } = AppConfigService.get()
+
+  return {
+    url: targetUrl as string,
+    appid: targetAppid as string,
+    appkey: targetAppkey as string
+  }
+})
+
+export {
+  kingHttp,
+  jHttp
+}

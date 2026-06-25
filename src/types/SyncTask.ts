@@ -6,6 +6,8 @@ export interface SyncTask {
   startTime: Date;
   endTime: Date;
   completedTime: Date | null;
+  startPeriod: string;
+  endPeriod: string;
   exception: string | null;
   note: string | null;
   succeedCount: number;
@@ -13,6 +15,7 @@ export interface SyncTask {
   ready: boolean;
   running: boolean,
   version: number,
+  count: number,
   datas?: SyncTaskData[]
   createdTime: Date
   lastModifiedTime: Date

@@ -2,47 +2,66 @@ import SyncTaskService from './SyncTaskService'
 import SyncTaskDataService from './SyncTaskDataService'
 import type { SyncTask, SyncTaskData } from '@/types'
 import log from 'electron-log'
-import http from './http'
+import { jHttp, kingHttp } from './http'
 
 import pRetry from 'p-retry'
 import appState from '@/AppState'
 
-async function fetchData (task: SyncTask): Promise<SyncTaskData[]> {
-  const allRows: Array<{ id: number }> = []
-  let currentPage = 1
-  let hasMoreData = true
-  while (hasMoreData) {
-    const { data } = await http.get(`https://api.kingdee.com/jdy/v2/fi/voucher?page=${currentPage}&page_size=100`)
-    const currentRows = data.data.rows || []
-    allRows.push(...currentRows)
-    // 如果返回的数据少于预期，说明已经是最后一页
-    hasMoreData = false // currentRows.length > 0
-    currentPage++
-  }
-
-  const datas = allRows.map(item => {
-    return {
-      taskId: task.id as number,
-      data: JSON.stringify(item),
-      succeed: null,
-      exception: '',
-      running: false,
-      version: 0,
-      createdTime: new Date(),
-      lastModifiedTime: new Date()
-    }
-  })
-  return SyncTaskDataService.saveAll(datas)
-}
-
 const executors: Map<number, { stopped: boolean }> = new Map()
+
+async function fetchData (id: number): Promise<SyncTask> {
+  let task = SyncTaskService.findById(id)
+  if (task == null) {
+    throw new Error(`Task [${id}] not found`)
+  }
+  if (task.running) {
+    throw new Error(`Task [${id}] is already running`)
+  }
+  try {
+    task = SyncTaskService.update(id, { ...task, running: true })
+    let currentPage = 1
+    let hasMoreData = true
+    const batchSize = 100
+
+    while (hasMoreData) {
+      const { data } = await kingHttp.get(`https://api.kingdee.com/jdy/v2/fi/voucher?page=${currentPage}&page_size=${batchSize}&start_period=${task.startPeriod}&end_period=${task.endPeriod}`)
+      const currentRows = data.data.rows || []
+      // 如果返回的数据少于预期，说明已经是最后一页
+      hasMoreData = currentRows.length > 0
+      currentPage++
+      const datas = currentRows.map(item => {
+        return {
+          taskId: task!.id as number,
+          data: JSON.stringify(item),
+          succeed: null,
+          exception: '',
+          running: false,
+          version: 0,
+          createdTime: new Date(),
+          lastModifiedTime: new Date()
+        }
+      })
+      if (currentRows.length > 0) {
+        SyncTaskDataService.saveAll(datas)
+      }
+    }
+    SyncTaskService.update(id, { ...task, running: false, ready: true, exception: null })
+    log.info(`Task ${id} data fetched and marked as ready`)
+    return updateTaskStatus(id)
+  } catch (e) {
+    SyncTaskService.update(id, { ...task, running: false, ready: false, exception: (e.message ?? '未知错误') })
+    updateTaskStatus(id)
+    log.error('获取数据时发生错误', e)
+    throw e
+  }
+}
 
 // 定义任务消费者函数
 async function saveToRemote (taskData: SyncTaskData): Promise<SyncTaskData> {
   return pRetry(async () => {
     const { id } = JSON.parse(taskData.data)
 
-    const { data } = await http.get(`https://api.kingdee.com/jdy/v2/fi/voucher_detail?id=${id}`)
+    const { data } = await kingHttp.get(`https://api.kingdee.com/jdy/v2/fi/voucher_detail?id=${id}`)
 
     const voucher = data.data
 
@@ -66,6 +85,10 @@ async function saveToRemote (taskData: SyncTaskData): Promise<SyncTaskData> {
         direction: ''// 借贷方向
       }
     })
+    for (const item of cashFlowItems) {
+      const { data } = await jHttp.post('/sso/finance/financeDetail', item)
+      log.info(`save voucher item [${JSON.stringify(item)}],reslult[${data}]`)
+    }
 
     cashFlowItems.forEach(v => {
       log.info(`save voucher item [${JSON.stringify(v)}]`, v)
@@ -74,7 +97,10 @@ async function saveToRemote (taskData: SyncTaskData): Promise<SyncTaskData> {
     taskData.succeed = true
     taskData.running = false
     taskData.exception = ''
-    return SyncTaskDataService.update(taskData.id!, taskData)
+    const result = SyncTaskDataService.update(taskData.id!, taskData)
+    appState.mainWindow?.webContents?.send('task-data-progress', result)
+    updateTaskStatus(taskData.taskId)
+    return result
   }, {
     retries: 3,
     minTimeout: 1000,
@@ -85,7 +111,9 @@ async function saveToRemote (taskData: SyncTaskData): Promise<SyncTaskData> {
         taskData.succeed = false
         taskData.running = false
         taskData.exception = error?.message ?? '未知错误'
-        SyncTaskDataService.update(taskData.id!, taskData)
+        const result = SyncTaskDataService.update(taskData.id!, taskData)
+        updateTaskStatus(taskData.taskId)
+        appState.mainWindow?.webContents?.send('task-data-progress', result)
         log.error(`saveToRemote all ${attemptNumber} attempts failed for taskData ${taskData.id}`)
       }
     }
@@ -104,88 +132,69 @@ async function executeItem (id: number): Promise<SyncTaskData | null> {
 function execute (id: number): SyncTask | null {
   // 查询任务
   log.info(`execute task [${id}]`)
-
-  let task = SyncTaskService.findById(id)
-  if (!task) {
+  const oldTask = SyncTaskService.findById(id)
+  if (oldTask == null) {
     throw new Error(`Task ${id} not found`)
   }
+
+  let task: SyncTask = oldTask
 
   if (task.running) {
     throw new Error(`Task ${id} is already running`)
   }
 
-  task = SyncTaskService.update(id, { ...task, running: true })
-
   // 异步执行任务准备流程:先获取数据,再处理数据
-  const prepareTask = async () => {
+  const runTask = async (): Promise<SyncTask> => {
     try {
       const taskState = { stopped: false }
-      executors.set(id, taskState)
+      executors.set(Number(id), taskState)
       // 启动任务队列
       // 检查任务是否已经就绪
       if (!task.ready) {
-        const allRows = await fetchData(task)
-        if (allRows.length <= 0) {
-          completeTask(id)
-          return
-        }
-        task.ready = true
-        SyncTaskService.update(id, task)
-        log.info(`Task ${id} data fetched and marked as ready`)
+        task = await fetchData(id)
       }
-      if (taskState.stopped) {
-        completeTask(id)
-        return
-      }
-      let processedCount = 0
+
+      task = SyncTaskService.update(id, { ...task, running: true })
+      task = updateTaskStatus(id)
 
       // 串行处理任务数据
-
       while (!taskState.stopped) {
         const nextData = SyncTaskDataService.getNext(id)
         if (!nextData) {
           break // 没有更多数据，退出循环
         }
         try {
-          processedCount++
           const result = await saveToRemote(nextData)
           appState.mainWindow?.webContents?.send('task-data-progress', result)
         } catch {
           const result = SyncTaskDataService.findById(nextData.id!)
           appState.mainWindow?.webContents?.send('task-data-progress', result)
         }
-
-        // 每处理10条更新一次状态
-        if (processedCount % 10 === 0) {
-          const result = SyncTaskService.updateTaskStatus(id)
-          appState.mainWindow?.webContents?.send('task-progress', result)
-        }
       }
-
-      completeTask(id)
-
+      task = SyncTaskService.update(id, { ...task, running: false })
+      return updateTaskStatus(id)
       // 获取并处理所有任务数据
     } catch (error) {
-      log.error(`Failed to prepare task ${id}:`, error)
+      log.error(`Failed to run task ${id}:`, error)
       throw error
     }
   }
 
-  prepareTask().then(() => {
-    log.info(`Task ${id} running`)
+  runTask().then(() => {
+    log.info(`Task ${id} completed`)
   })
 
-  return task
+  return SyncTaskService.findById(id)!
 }
 
-function completeTask (taskId: number): void {
-  executors.delete(taskId)
-  const task = SyncTaskService.completeTask(taskId)
-  appState.mainWindow?.webContents?.send('task-completed', task)
+function updateTaskStatus (id: number): SyncTask {
+  const result = SyncTaskService.updateTaskStatus(id)
+  appState.mainWindow?.webContents?.send('task-progress', result)
+  return result!
 }
 
 async function stop (id: number) {
-  const executor = executors.get(id)
+  const executor = executors.get(Number(id))
   if (executor) {
     executor.stopped = true
   }
@@ -194,5 +203,6 @@ async function stop (id: number) {
 export default {
   executeItem,
   execute,
-  stop
+  stop,
+  fetchData
 }

@@ -20,15 +20,15 @@ const resetTaskStmt = db.prepare(`
 const countTaskStmt = db.prepare(
   `
   UPDATE sync_task_
-  SET (succeed_count, fail_count) = (
+  SET (succeed_count, fail_count, count_) = (
         SELECT 
           COUNT(CASE WHEN succeed = 1 THEN 1 END),
-          COUNT(CASE WHEN succeed = 0 THEN 1 END)
+          COUNT(CASE WHEN succeed = 0 THEN 1 END),
+          COUNT(id)
         FROM sync_task_data 
         WHERE task_id = @id
       ),
-      last_modified_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-      version = version + 1
+      last_modified_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
   WHERE id = @id;
   `
 )
@@ -37,9 +37,10 @@ const completeStmt = db.prepare(`
   UPDATE sync_task_
   SET running = 0,
       completed_time = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-      last_modified_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-      version = version + 1
+      last_modified_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
   WHERE id = ? 
+  AND completed_time IS NULL
+  AND exception IS NULL
   AND NOT EXISTS (
     SELECT 1 
     FROM sync_task_data d
@@ -50,8 +51,8 @@ const completeStmt = db.prepare(`
 
 // 预编译 SQL 语句
 const insertStmt = db.prepare(`
-  INSERT INTO sync_task_ (data_name, start_time, end_time, note, ready)
-  VALUES (@dataName, @startTime, @endTime, @note, @ready)
+  INSERT INTO sync_task_ (data_name, start_time, end_time,start_period, end_period, note, ready)
+  VALUES (@dataName, @startTime, @endTime, @startPeriod, @endPeriod, @note, @ready)
 `)
 insertStmt.setAllowUnknownNamedParameters(true)
 
@@ -61,6 +62,8 @@ const updateStmt = db.prepare(`
       start_time = @startTime,
       end_time = @endTime,
       completed_time = @completedTime,
+      start_period = @startPeriod,
+      end_period = @endPeriod,
       exception = @exception,
       note = @note,
       succeed_count = @succeedCount,
@@ -86,6 +89,8 @@ function toDbFormat (data: SyncTask): Record<string, SQLInputValue> {
     startTime: (data.startTime instanceof Date ? data.startTime.toISOString() : data.startTime) ?? null,
     endTime: (data.endTime instanceof Date ? data.endTime.toISOString() : data.endTime) ?? null,
     completedTime: (data.completedTime instanceof Date ? data.completedTime.toISOString() : data.completedTime) ?? null,
+    startPeriod: data.startPeriod,
+    endPeriod: data.endPeriod,
     exception: data.exception as string ?? null,
     note: data.note,
     succeedCount: data.succeedCount ?? 0,
@@ -108,9 +113,12 @@ function fromDbFormat (row: Record<string, SQLOutputValue>): SyncTask {
     endTime: new Date(row.end_time as string),
     completedTime: row.completed_time == null ? null : new Date(row.completed_time as string),
     exception: row.exception as string | null,
+    startPeriod: row.start_period as string,
+    endPeriod: row.end_period as string,
     note: row.note as string | null,
     succeedCount: row.succeed_count as number,
     failCount: row.fail_count as number,
+    count: row.count_ as number,
     ready: row.ready === 1,
     datas: [],
     running: row.running === 1,
@@ -234,31 +242,17 @@ function updateTaskStatus (id: number): SyncTask | null {
   try {
     completeStmt.run(id)
     countTaskStmt.run({ id })
-    db.exec('COMMIT')
     const newRow = selectStmt.get(id)
     if (newRow) {
-      return fromDbFormat(newRow)
+      const data = fromDbFormat(newRow)
+      if (data.completedTime != null) {
+        resetTaskDataStmt.run(id)
+        resetTaskStmt.run(id)
+      }
+      db.exec('COMMIT')
+      return fromDbFormat(selectStmt.get(id)!)
     } else {
-      return null
-    }
-  } catch (error) {
-    db.exec('ROLLBACK')
-    throw error
-  }
-}
-
-function completeTask (id: number): SyncTask | null {
-  db.exec('BEGIN TRANSACTION')
-  try {
-    resetTaskDataStmt.run(id)
-    resetTaskStmt.run(id)
-    completeStmt.run(id)
-    countTaskStmt.run({ id })
-    db.exec('COMMIT')
-    const newRow = selectStmt.get(id)
-    if (newRow) {
-      return fromDbFormat(newRow)
-    } else {
+      db.exec('COMMIT')
       return null
     }
   } catch (error) {
@@ -278,6 +272,5 @@ export default {
   findAll,
   remove,
   updateTaskStatus,
-  completeTask,
   init
 }

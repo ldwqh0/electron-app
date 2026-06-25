@@ -28,20 +28,26 @@
           </router-link>
         </template>
       </el-table-column>
-      <el-table-column :formatter="dateFormatter()"
-                       label="开始时间"
-                       prop="startTime"
+      <el-table-column label="开始期间"
+                       prop="startPeriod"
                        width="140" />
-      <el-table-column :formatter="dateFormatter()"
-                       label="结束日期"
-                       prop="endTime"
+      <el-table-column label="结束期间"
+                       prop="endPeriod"
                        width="140" />
       <el-table-column :formatter="dateTimeFormatter()"
                        label="完成时间"
                        prop="completedTime"
                        width="180" />
+      <el-table-column label="异常信息" prop="exception">
+        <template #default="{row}">
+          <el-link type="danger" @click="showData(row.exception)">
+            {{ truncate(row.exception, { length: 20 }) }}
+          </el-link>
+        </template>
+      </el-table-column>
       <el-table-column label="成功数量" prop="succeedCount" width="80" />
       <el-table-column label="失败数量" prop="failCount" width="80" />
+      <el-table-column label="总数" prop="count" width="80" />
       <el-table-column label="状态" width="80">
         <template #default="{row}">
           <span v-if="row.completedTime">已完成</span>
@@ -90,12 +96,13 @@
         <el-form-item label="任务名称" prop="dataName">
           <el-input v-model="state.current.dataName" maxlength="100" show-word-limit />
         </el-form-item>
-        <el-form-item label="任务开始日期" prop="startTime">
-          <el-date-picker v-model="state.current.startTime" />
+        <el-form-item label="任务开始期间" prop="startPeriod">
+          <period-select v-model="state.current.startPeriod" />
         </el-form-item>
-        <el-form-item label="任务结束日期" prop="endTime">
-          <el-date-picker v-model="state.current.endTime" />
+        <el-form-item label="任务结束期间" prop="endPeriod">
+          <period-select v-model="state.current.endPeriod" />
         </el-form-item>
+
         <el-form-item label="备注" prop="note">
           <el-input v-model="state.current.note"
                     :rows="4"
@@ -109,6 +116,13 @@
         <el-button type="primary" @click="saveTask">确定</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="state.dataDialog.visible" title="数据详情" width="50%">
+      <div>{{ state.dataDialog.content }}</div>
+      <template #footer>
+        <el-button @click="state.dataDialog.visible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -119,9 +133,10 @@
   import { ElMessage, ElMessageBox } from 'element-plus'
   import winApi from '@/http/winApi'
   import { AxiosInstance } from 'axios'
-  import dateFormatter from '@/components/EleDatatables/dateFormatter'
   import dateTimeFormatter from '@/components/EleDatatables/dateTimeFormatter'
   import useAppStore from '@/store'
+  import { truncate } from 'lodash-es'
+  import PeriodSelect from '@/components/PeriodSelect/PeriodSelect.vue'
 
   const state = reactive<{
     serverParams: {
@@ -131,6 +146,10 @@
     taskDialogVisible: boolean,
     loading: boolean,
     datas: SyncTask[]
+    dataDialog: {
+      visible: boolean,
+      content: string
+    },
   }>({
     serverParams: {
       keyword: ''
@@ -138,7 +157,11 @@
     datas: [],
     taskDialogVisible: false,
     current: null,
-    loading: false
+    loading: false,
+    dataDialog: {
+      visible: false,
+      content: ''
+    }
   })
   const http = window.api as AxiosInstance
   const dataTable = useTemplateRef('dataTable')
@@ -146,7 +169,7 @@
   const searchForm = useTemplateRef('searchForm')
   const appStore = useAppStore()
 
-  let cancelCompleteEvent: (() => void) = () => {}
+  const cancelCompleteEvent: (() => void) = () => {}
   let cancelProgressEvent: (() => void) = () => {}
   // 计算表格高度
   const tableHeight = computed(() => {
@@ -161,11 +184,11 @@
       { required: true, message: '请输入任务名称', trigger: 'blur' },
       { max: 100, message: '任务名称不能超过100个字符', trigger: 'blur' }
     ],
-    startTime: [
-      { required: true, message: '请选择任务开始日期', trigger: 'change' }
+    startPeriod: [
+      { required: true, message: '请选择任务开始期间', trigger: 'change' }
     ],
-    endTime: [
-      { required: true, message: '请选择任务结束日期', trigger: 'change' }
+    endPeriod: [
+      { required: true, message: '请选择任务结束期间', trigger: 'change' }
     ],
     note: [
       { max: 400, message: '备注不能超过400个字符', trigger: 'blur' }
@@ -175,19 +198,22 @@
   async function newTask () {
     state.taskDialogVisible = true
     state.current = {
+      id: 0,
+      endPeriod: `${new Date().getFullYear()}`,
+      startPeriod: `${new Date().getMonth() + 1}`,
       completedTime: null,
       createdTime: new Date(),
       endTime: new Date(),
       datas: undefined,
       exception: null,
       note: null,
+      succeedCount: 0,
       failCount: 0,
-      id: 0,
+      count: 0,
       lastModifiedTime: new Date(),
       ready: false,
       running: false,
       startTime: new Date(),
-      succeedCount: 0,
       version: 0,
       dataName: '凭证同步任务'
     }
@@ -195,6 +221,13 @@
 
   function setData (datas: SyncTask[]) {
     state.datas = datas
+  }
+
+  function showData (data: string) {
+    state.dataDialog = {
+      visible: true,
+      content: data
+    }
   }
 
   async function execute (row: SyncTask) {
@@ -206,7 +239,7 @@
       const message = error instanceof Error ? error.message : '未知错误'
       ElMessage.error('执行任务异常: ' + message)
     } finally {
-      state.loading = true
+      state.loading = false
     }
   }
 
@@ -214,7 +247,6 @@
     try {
       state.loading = true
       await winApi.post('task-executor/stop', row.id)
-      dataTable.value?.reloadData()
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : '未知错误'
       ElMessage.error('停止任务异常: ' + message)
@@ -280,7 +312,6 @@
   }
 
   onMounted(() => {
-    cancelCompleteEvent = window.electron.ipcRenderer.on('task-completed', onTaskProgress)
     cancelProgressEvent = window.electron.ipcRenderer.on('task-progress', onTaskProgress)
   })
 

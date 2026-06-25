@@ -1,124 +1,127 @@
 <template>
-  <el-page-header v-loading="state.loading"
-                  class="details-container"
+  <el-page-header class="details-container"
                   style="height: 100%;"
                   @back="toHome">
     <template #content>
       <span>任务详情</span>
     </template>
-    <el-form ref="searchForm"
-             :model="state.task"
-             inline
-             style="margin-top: 10px">
-      <div style="display: flex;justify-content: space-between;">
-        <div>
-          <el-form-item label="任务ID">
-            {{ state.task?.id }}
-          </el-form-item>
-          <el-form-item label="任务名称">
-            {{ state.task?.dataName }}
-          </el-form-item>
-          <el-form-item label="数据范围">
-            {{ timeStr }}
-          </el-form-item>
-          <el-form-item label="执行成功数">
-            {{ state.task?.succeedCount }}
-          </el-form-item>
-          <el-form-item label="执行失败数">
-            {{ state.task?.failCount }}
-          </el-form-item>
-          <el-form-item label="任务状态">
-            <span v-if="state.task.completedTime != null">已完成</span>
-            <template v-else>
-              <span v-if="state.task.running">运行中</span>
+    <div v-loading="state.loading">
+      <el-form ref="searchForm"
+               :model="state.task"
+               inline
+               style="margin-top: 10px">
+        <div style="display: flex;justify-content: space-between;">
+          <div>
+            <el-form-item label="任务ID：">
+              {{ state.task?.id }}
+            </el-form-item>
+            <el-form-item label="任务名称：">
+              {{ state.task?.dataName }}
+            </el-form-item>
+            <el-form-item label="数据范围：">
+              {{ state.task?.startPeriod }} ~ {{ state.task?.endPeriod }}
+            </el-form-item>
+            <el-form-item label="执行成功数：">
+              {{ state.task?.succeedCount }}
+            </el-form-item>
+            <el-form-item label="执行失败数：">
+              {{ state.task?.failCount }}
+            </el-form-item>
+            <el-form-item label="任务状态：">
+              <span v-if="state.task.completedTime != null">已完成</span>
               <template v-else>
-                <span v-if="state.task.ready">就绪</span>
-                <span v-else-if="!state.task.ready">未开始</span>
+                <span v-if="state.task.running">运行中</span>
+                <template v-else>
+                  <span v-if="state.task.ready">就绪</span>
+                  <span v-else-if="!state.task.ready">未开始</span>
+                </template>
               </template>
-            </template>
-          </el-form-item>
+            </el-form-item>
+          </div>
+          <div>
+            <el-button v-if="!state.task.ready && !state.task.running"
+                       @click="fetchTaskData()">
+              获取数据
+            </el-button>
+            <el-button v-if="state.task.running"
+                       :disabled="!state.task.running"
+                       type="primary"
+                       @click="stop">
+              停止
+            </el-button>
+            <el-button v-if="!state.task.running && state.task.completedTime==null "
+                       type="primary"
+                       @click="start">
+              启动
+            </el-button>
+          </div>
         </div>
-        <div>
-          <el-button v-if="state.task.running"
-                     :disabled="!state.task.running"
-                     type="primary"
-                     @click="stop">
-            停止
-          </el-button>
-          <el-button v-else
-                     :disabled="state.task.running || state.task.completedTime != null"
-                     type="primary"
-                     @click="start">
-            启动
-          </el-button>
-        </div>
-      </div>
-    </el-form>
-    <ele-datatables ref="table"
-                    :debounce-time="1000"
-                    :http="http"
-                    :max-height="tableHeight"
-                    :server-params="serverParams"
-                    ajax="sync-task-data/findAll"
-                    @data-change="setData">
-      <el-table-column label="ID" prop="id" width="80" />
-      <el-table-column label="数据项" prop="data">
-        <template #default="{row}">
-          <el-button text type="primary" @click="showData(row.data)">
-            {{ truncateData(row.data) }}
-          </el-button>
-        </template>
-      </el-table-column>
-
-      <el-table-column label="异常" prop="exception">
-        <template #default="{row}">
-          <el-button text type="primary" @click="showData(row.exception)">
-            {{ truncateData(row.exception) }}
-          </el-button>
-        </template>
-      </el-table-column>
-
-      <el-table-column label="状态" prop="running" width="120">
-        <template #header>
-          <el-dropdown @command="switchState">
-            <span class="el-dropdown-link">
-              {{ stateFilterText }}
-              <el-icon>
-                <ArrowDown />
-              </el-icon>
-            </span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item :command="null">全部</el-dropdown-item>
-                <el-dropdown-item command="pending">未开始</el-dropdown-item>
-                <el-dropdown-item command="running">运行中</el-dropdown-item>
-                <el-dropdown-item command="success">成功</el-dropdown-item>
-                <el-dropdown-item command="failed">失败</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </template>
-        <template #default="{row}">
-          <el-tag v-if="row.running" type="warning">运行中</el-tag>
-          <template v-else>
-            <el-tag v-if="row.succeed" type="success">成功</el-tag>
-            <el-tag v-else-if="row.succeed===false" type="danger">失败</el-tag>
-            <el-tag v-else>未开始</el-tag>
+      </el-form>
+      <ele-datatables ref="table"
+                      :debounce-time="1000"
+                      :http="http"
+                      :max-height="tableHeight"
+                      :server-params="serverParams"
+                      ajax="sync-task-data/findAll"
+                      @data-change="setData">
+        <el-table-column label="ID" prop="id" width="80" />
+        <el-table-column label="数据项" prop="data">
+          <template #default="{row}">
+            <el-link type="primary" @click="showData(row.data)">
+              {{ truncate(row.data, { length: 20 }) }}
+            </el-link>
           </template>
-        </template>
-      </el-table-column>
+        </el-table-column>
 
-      <el-table-column :formatter="dateTimeFormatter()"
-                       label="创建时间"
-                       prop="createdTime"
-                       width="180" />
-      <el-table-column label="操作" width="80">
-        <template #default="{row}">
-          <el-link type="primary" @click="execute(row)">执行</el-link>
-        </template>
-      </el-table-column>
-    </ele-datatables>
+        <el-table-column label="异常" prop="exception">
+          <template #default="{row}">
+            <el-link type="danger" @click="showData(row.exception)">
+              {{ truncate(row.exception, { length: 20 }) }}
+            </el-link>
+          </template>
+        </el-table-column>
 
+        <el-table-column label="状态" prop="running" width="120">
+          <template #header>
+            <el-dropdown @command="switchState">
+              <span class="el-dropdown-link">
+                {{ stateFilterText }}
+                <el-icon>
+                  <ArrowDown />
+                </el-icon>
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item :command="null">全部</el-dropdown-item>
+                  <el-dropdown-item command="pending">未开始</el-dropdown-item>
+                  <el-dropdown-item command="running">运行中</el-dropdown-item>
+                  <el-dropdown-item command="success">成功</el-dropdown-item>
+                  <el-dropdown-item command="failed">失败</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </template>
+          <template #default="{row}">
+            <el-tag v-if="row.running" type="warning">运行中</el-tag>
+            <template v-else>
+              <el-tag v-if="row.succeed" type="success">成功</el-tag>
+              <el-tag v-else-if="row.succeed===false" type="danger">失败</el-tag>
+              <el-tag v-else>未开始</el-tag>
+            </template>
+          </template>
+        </el-table-column>
+
+        <el-table-column :formatter="dateTimeFormatter()"
+                         label="创建时间"
+                         prop="createdTime"
+                         width="180" />
+        <el-table-column label="操作" width="80">
+          <template #default="{row}">
+            <el-link type="primary" @click="execute(row)">执行</el-link>
+          </template>
+        </el-table-column>
+      </ele-datatables>
+    </div>
     <!-- 数据详情对话框 -->
     <el-dialog v-model="state.dataDialog.visible" title="数据详情" width="50%">
       <div>{{ state.dataDialog.content }}</div>
@@ -135,9 +138,8 @@
   import { useRouter } from 'vue-router'
   import { SyncTask, SyncTaskData } from '@/types'
   import dateTimeFormatter from '@/components/EleDatatables/dateTimeFormatter'
-  import dayjs from 'dayjs'
   import useAppStore from '@/store'
-  import { throttle } from 'lodash-es'
+  import { throttle, truncate } from 'lodash-es'
   import { ElMessage } from 'element-plus'
 
   const searchForm = useTemplateRef('searchForm')
@@ -201,7 +203,6 @@
     if (state.filterState === 'pending') {
       // 未开始: running=false, succeed=null(不传)
       params.running = false
-      params.succeed = null
     } else if (state.filterState === 'running') {
       // 运行中: running=true
       params.running = true
@@ -235,10 +236,6 @@
     return appStore.height - searchFormHeight - 160
   })
 
-  const timeStr = computed(() => {
-    return `${dayjs(state.task.createdTime).format('YYYY-MM-DD')} 至 ${dayjs(state.task.endTime).format('YYYY-MM-DD')}`
-  })
-
   // 节流加载函数
   const reloadData = throttle(() => {
     table.value.reloadData()
@@ -262,18 +259,24 @@
     state.dataDialog.visible = true
   }
 
-  function truncateData (data: string): string {
-    if (data.length <= 20) {
-      return data
-    }
-    return data.substring(0, 20) + '...'
-  }
-
   async function loadData () {
     try {
       state.loading = true
       const { data } = await winApi.post('sync-task/findById', props.taskId)
       state.task = data
+    } finally {
+      state.loading = false
+    }
+  }
+
+  async function fetchTaskData () {
+    try {
+      state.loading = true
+      const { data } = await winApi.post('task-executor/fetchData', props.taskId)
+      state.task = data
+      table.value?.reloadData()
+    } catch (error) {
+      ElMessage.error('获取任务数据异常: ' + (error?.message ?? '未知错误'))
     } finally {
       state.loading = false
     }
@@ -292,7 +295,7 @@
       const message = error instanceof Error ? error.message : '未知错误'
       ElMessage.error('执行任务异常: ' + message)
     } finally {
-      state.loading = true
+      state.loading = false
     }
   }
 
@@ -317,18 +320,22 @@
 
   function onTaskDataCompleted (_: unknown, args: SyncTaskData) {
     // 如果state.data为空,刷新表格
-    if (state.datas.length === 0) {
-      reloadData()
-    } else {
-      const exist = state.datas.find(it => it.id === args.id)
-      if (exist) {
-        Object.assign(exist, args)
+    if (Number(args.taskId) === Number(props.taskId)) {
+      if (state.datas.length === 0) {
+        reloadData()
+      } else {
+        const exist = state.datas.find(it => it.id === args.id)
+        if (exist) {
+          Object.assign(exist, args)
+        }
       }
     }
   }
 
   function onTaskProgress (_: unknown, args: SyncTask) {
-    Object.assign(state.task, args)
+    if (Number(args.id) === Number(props.taskId)) {
+      Object.assign(state.task, args)
+    }
   }
 
   onMounted(() => {
