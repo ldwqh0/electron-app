@@ -9,6 +9,14 @@ import appState from '@/AppState'
 
 const executors: Map<number, { stopped: boolean }> = new Map()
 
+// 转换期间格式，原来是xxxxxx样式，修改为 xxxx-xx格式
+function parseToJPeriod (input: string): string {
+  if (input.length === 6) {
+    return `${input.substring(0, 4)}-${input.substring(4, 6)}`
+  }
+  return input
+}
+
 async function fetchData (id: number): Promise<SyncTask> {
   let task = SyncTaskService.findById(id)
   if (task == null) {
@@ -71,6 +79,7 @@ async function saveToRemote (taskData: SyncTaskData): Promise<SyncTaskData> {
       // 借方记收入，贷方记录支出
       const amtType = item.dc === '1' ? 2 : 1
       return {
+        period: parseToJPeriod(voucher.period),
         doc_no: `${item.id}`, // 单据编号（使用凭证ID）
         exec_date: voucher.date, // 收付日期/业务发生日期（使用凭证日期）
         apply_date: voucher.date, // 申请日期（使用凭证日期）
@@ -87,6 +96,9 @@ async function saveToRemote (taskData: SyncTaskData): Promise<SyncTaskData> {
     })
     for (const item of cashFlowItems) {
       const { data } = await jHttp.post('/sso/finance/financeDetail', item)
+      if (data.code !== 0) {
+        throw Error(`推送到监管平台时发生错误：[${data.msg}]`)
+      }
       log.info(`save voucher item [${JSON.stringify(item)}],reslult[${data}]`)
     }
 
