@@ -6,6 +6,7 @@ import { jHttp, kingHttp } from './http'
 
 import pRetry from 'p-retry'
 import appState from '@/AppState'
+import AccountService, { type Account } from '@/service/AccountService'
 
 const executors: Map<number, { stopped: boolean }> = new Map()
 
@@ -57,7 +58,7 @@ async function fetchData (id: number): Promise<SyncTask> {
     log.info(`Task ${id} data fetched and marked as ready`)
     return updateTaskStatus(id)
   } catch (e) {
-    SyncTaskService.update(id, { ...task, running: false, ready: false, exception: (e.message ?? '未知错误') })
+    SyncTaskService.update(id, { ...task, running: false, ready: false, exception: (e?.message ?? '未知错误') })
     updateTaskStatus(id)
     log.error('获取数据时发生错误', e)
     throw e
@@ -65,7 +66,7 @@ async function fetchData (id: number): Promise<SyncTask> {
 }
 
 // 定义任务消费者函数
-async function saveToRemote (taskData: SyncTaskData): Promise<SyncTaskData> {
+async function saveToRemote (taskData: SyncTaskData, accounts: Record<string, Account>): Promise<SyncTaskData> {
   return pRetry(async () => {
     const { id } = JSON.parse(taskData.data)
 
@@ -78,6 +79,7 @@ async function saveToRemote (taskData: SyncTaskData): Promise<SyncTaskData> {
       // 监管平台 收支类型：1=支出，2=收入 一般情况你贷方金额就是支出，借方金额就是收入吧
       // 借方记收入，贷方记录支出
       const amtType = item.dc === '1' ? 2 : 1
+      const accountFullName = accounts[item.account_id].full_name
       return {
         period: parseToJPeriod(voucher.period),
         doc_no: `${item.id}`, // 单据编号（使用凭证ID）
@@ -86,7 +88,7 @@ async function saveToRemote (taskData: SyncTaskData): Promise<SyncTaskData> {
         amount: item.amount_for, // 交易金额（本位币金额）
         amt_type: amtType, // 收支类型：1=支出(借方)，2=收入(贷方)
         debit_acct: item.account_number, // 科目代码
-        debit_name: item.account_name, // 科目名称
+        debit_name: accountFullName, // 科目名称
         debit_amt: item.debit_amount, // 借方金额
         credit_amt: item.credit_amount, // 贷方金额
         reason: item.explanation, // 备注
@@ -134,8 +136,9 @@ async function saveToRemote (taskData: SyncTaskData): Promise<SyncTaskData> {
 
 async function executeItem (id: number): Promise<SyncTaskData | null> {
   const r = SyncTaskDataService.findById(id)
+  const accounts = await AccountService.fetch()
   if (r != null) {
-    return saveToRemote(r)
+    return saveToRemote(r, accounts)
   } else {
     return Promise.reject(new Error('Task not found'))
   }
@@ -171,12 +174,13 @@ function execute (id: number): SyncTask | null {
 
       // 串行处理任务数据
       while (!taskState.stopped) {
+        const accounts = await AccountService.fetch()
         const nextData = SyncTaskDataService.getNext(id)
         if (!nextData) {
           break // 没有更多数据，退出循环
         }
         try {
-          const result = await saveToRemote(nextData)
+          const result = await saveToRemote(nextData, accounts)
           appState.mainWindow?.webContents?.send('task-data-progress', result)
         } catch {
           const result = SyncTaskDataService.findById(nextData.id!)
