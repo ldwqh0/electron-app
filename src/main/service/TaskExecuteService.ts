@@ -7,6 +7,8 @@ import { jHttp, kingHttp } from './http'
 import pRetry from 'p-retry'
 import appState from '@/AppState'
 import AccountService, { type Account } from '@/service/AccountService'
+import qs from 'qs'
+import { KingResponse, Ledger, LedgerRow, Voucher, VoucherEntry } from '@/kingstar/types'
 
 const executors: Map<number, { stopped: boolean }> = new Map()
 
@@ -16,6 +18,111 @@ function parseToJPeriod (input: string): string {
     return `${input.substring(0, 4)}-${input.substring(4, 6)}`
   }
   return input
+}
+
+function parseAmount (value: string): number {
+  const n = parseFloat(value)
+  return Number.isNaN(n) ? 0 : n
+}
+
+/**
+ * 为多借多贷凭证建立金额一一配对映射
+ * 返回 Map<entryId, oppositeEntryId>；若无法完全对齐则返回 null
+ */
+function buildManyToManyOppositeMap (
+  debitEntries: VoucherEntry[],
+  creditEntries: VoucherEntry[]
+): Map<string, string> | null {
+  // 金额分组
+  const debitByAmount = new Map<number, VoucherEntry[]>()
+  debitEntries.forEach(entry => {
+    const amount = parseAmount(entry.amount_for)
+    const list = debitByAmount.get(amount) ?? []
+    list.push(entry)
+    debitByAmount.set(amount, list)
+  })
+
+  const creditByAmount = new Map<number, VoucherEntry[]>()
+  creditEntries.forEach(entry => {
+    const amount = parseAmount(entry.amount_for)
+    const list = creditByAmount.get(amount) ?? []
+    list.push(entry)
+    creditByAmount.set(amount, list)
+  })
+
+  const oppositeMap = new Map<string, string>()
+  const usedCreditIds = new Set<string>()
+
+  for (const [amount, debits] of debitByAmount) {
+    const credits = creditByAmount.get(amount)
+    if (credits == null || credits.length !== debits.length) {
+      return null
+    }
+
+    debits.forEach((debit, index) => {
+      const credit = credits[index]
+      oppositeMap.set(debit.id, credit.id)
+      oppositeMap.set(credit.id, debit.id)
+      usedCreditIds.add(credit.id)
+    })
+  }
+
+  // 确保所有贷方分录都被配对
+  if (usedCreditIds.size !== creditEntries.length) {
+    return null
+  }
+
+  return oppositeMap
+}
+
+/**
+ * 计算分录的对方科目全名
+ * - 一借一贷：互为对方科目
+ * - 一贷多借 / 一借多贷：单方的对方科目为对方所有分录；多方的对方科目为单个分录
+ * - 多借多贷：仅当金额能完全一一配对时，返回等额匹配的那个对方科目；否则返回空
+ * 多个对方科目用分号分割
+ */
+function calcOppositeAccount (
+  entry: VoucherEntry,
+  entries: VoucherEntry[],
+  accounts: Record<string, Account>
+): string {
+  const debitEntries = entries.filter(e => e.dc === '1')
+  const creditEntries = entries.filter(e => e.dc !== '1')
+
+  // 当前分录方向
+  const currentIsDebit = entry.dc === '1'
+  const oppositeEntries = currentIsDebit ? creditEntries : debitEntries
+
+  // 没有对方分录
+  if (oppositeEntries.length === 0) {
+    return ''
+  }
+
+  // 一借一贷 或 一多对一：直接返回对方分录的全名
+  if (debitEntries.length === 1 || creditEntries.length === 1) {
+    return oppositeEntries
+      .map(e => accounts[e.account_id]?.full_name ?? e.account_name)
+      .join(';')
+  }
+
+  // 多借多贷：按金额全局一一配对
+  const oppositeMap = buildManyToManyOppositeMap(debitEntries, creditEntries)
+  if (oppositeMap == null) {
+    return ''
+  }
+
+  const oppositeId = oppositeMap.get(entry.id)
+  if (oppositeId == null) {
+    return ''
+  }
+
+  const oppositeEntry = entries.find(e => e.id === oppositeId)
+  if (oppositeEntry == null) {
+    return ''
+  }
+
+  return accounts[oppositeEntry.account_id]?.full_name ?? oppositeEntry.account_name
 }
 
 async function fetchData (id: number): Promise<SyncTask> {
@@ -33,7 +140,13 @@ async function fetchData (id: number): Promise<SyncTask> {
     const batchSize = 100
 
     while (hasMoreData) {
-      const { data } = await kingHttp.get(`https://api.kingdee.com/jdy/v2/fi/voucher?page=${currentPage}&page_size=${batchSize}&start_period=${task.startPeriod}&end_period=${task.endPeriod}`)
+      const params = qs.stringify({
+        page: currentPage,
+        page_size: batchSize,
+        start_period: task.startPeriod,
+        end_period: task.endPeriod
+      })
+      const { data } = await kingHttp.get(`https://api.kingdee.com/jdy/v2/fi/voucher?${params}`)
       const currentRows = data.data.rows || []
       // 如果返回的数据少于预期，说明已经是最后一页
       hasMoreData = currentRows.length > 0
@@ -69,17 +182,37 @@ async function fetchData (id: number): Promise<SyncTask> {
 async function saveToRemote (taskData: SyncTaskData, accounts: Record<string, Account>): Promise<SyncTaskData> {
   return pRetry(async () => {
     const { id } = JSON.parse(taskData.data)
-
-    const { data } = await kingHttp.get(`https://api.kingdee.com/jdy/v2/fi/voucher_detail?id=${id}`)
-
-    const voucher = data.data
+    const { data: { data: voucher } } = await kingHttp.get<KingResponse<Voucher>>(`https://api.kingdee.com/jdy/v2/fi/voucher_detail?id=${id}`)
+    const accountIds = [...new Set(voucher.entry_list.map(it => it.account_id))]
+    const subLedgerResults: [string, LedgerRow[]][] = await Promise.all(accountIds.map(async it => {
+      const params = qs.stringify({
+        account_id: it,
+        end_period: voucher.period,
+        start_period: voucher.period
+      })
+      const { data: { data } } = await kingHttp.get<KingResponse<Ledger>>(`https://api.kingdee.com/jdy/v2/fi/sub_ledger_report?${params}`)
+      return [it, data.rows]
+    }))
+    const subLedgerMap: Map<string, LedgerRow[]> = new Map(subLedgerResults)
 
     const cashFlowItems = voucher.entry_list.map(item => {
       // 根据借贷方向判断收支类型：1=借方 ，-1=贷方
       // 监管平台 收支类型：1=支出，2=收入 一般情况你贷方金额就是支出，借方金额就是收入吧
       // 借方记收入，贷方记录支出
       const amtType = item.dc === '1' ? 2 : 1
-      const accountFullName = accounts[item.account_id].full_name
+      const accountFullName = accounts[item.account_id]?.full_name ?? ''
+      const opposite = calcOppositeAccount(item, voucher.entry_list, accounts)
+      const ledgerRows = subLedgerMap.get(item.account_id) ?? []
+      const row = ledgerRows.find(it => {
+        let amountEq = false
+        if (item.dc === '1') {
+          amountEq = (Number(item.debit_amount) === Number(it.debit))
+        } else {
+          amountEq = Number(item.credit_amount) === Number(it.credit)
+        }
+        return it.voucher_id === id && amountEq
+      }) ?? { end_bal: 0 }
+
       return {
         period: parseToJPeriod(voucher.period),
         doc_no: `${item.id}`, // 单据编号（使用凭证ID）
@@ -93,7 +226,9 @@ async function saveToRemote (taskData: SyncTaskData, accounts: Record<string, Ac
         credit_amt: item.credit_amount, // 贷方金额
         reason: item.explanation, // 备注
         voucher_no: voucher.number, // 凭证号
-        direction: ''// 借贷方向
+        direction: item.dc === '1' ? '借' : '贷', // 借贷方向
+        credit_acct: opposite,
+        balance: row.end_bal
       }
     })
     for (const item of cashFlowItems) {

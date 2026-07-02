@@ -108,3 +108,24 @@ export interface Voucher {
   number: string
   entry_list: VoucherEntry[]
 }
+
+export interface Ledger {
+  'begin_bal': string,
+  'begin_dc': string,
+  'end_bal': string,
+  'end_dc': string,
+  'page_count': number,
+  'rows': LedgerRow[],
+  'total_count': number
+}
+
+export interface LedgerRow {
+  'credit': string,
+  'date': string,
+  'dc': number,
+  'debit': string,
+  'end_bal': string,
+  'explanation': string,
+  'voucher_id': string,
+  'voucher_no': string
+}
